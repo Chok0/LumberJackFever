@@ -7450,7 +7450,7 @@ function loop(ts){
   // Intro cinematic
   if(introActive){updateIntro(d);requestAnimationFrame(loop);return;}
   
-  if(!dead){gt+=d;if(!shopOn)dayPhase=(dayPhase+d*.001)%1} // time always advances, day/night pauses in shop
+  if(!dead){gt+=d;if(!shopOn){const nAcc=(dayPhase>.82||dayPhase<.14)?2.5:1;dayPhase=(dayPhase+d*.001*nAcc)%1}} // night passes faster (summer)
 
   updWind(d);updP2(d);updateDialogue(d);evolveVillage();  // Check corruption threshold for guardian alert
   if(!P._guardianAwake){
