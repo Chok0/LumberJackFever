@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lumberjack Fever — SpriteLib Roster Complet (Hors arbres)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=DM+Sans:wght@400;500;600&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0e0a;color:#d4e8d0;font-family:'DM Sans',sans-serif;min-height:100vh}
+.grain{position:fixed;inset:0;z-index:999;pointer-events:none;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+header{text-align:center;padding:28px 20px 18px;position:relative}
+header::after{content:'';position:absolute;bottom:0;left:10%;right:10%;height:1px;background:linear-gradient(90deg,transparent,#2d6a4f,transparent)}
+h1{font-family:'Silkscreen',monospace;font-size:clamp(16px,3vw,28px);color:#52b788;text-shadow:0 0 30px rgba(82,183,136,.3);letter-spacing:2px;margin-bottom:4px}
+.sub{font-size:10px;color:#6b8a7a;letter-spacing:3px;text-transform:uppercase}
+.ctrls{display:flex;justify-content:center;align-items:center;gap:12px;padding:12px;flex-wrap:wrap}
+.ctrls label{font-size:10px;color:#4a7a5a;text-transform:uppercase;letter-spacing:1px}
+.btn{background:#1b3325;color:#52b788;border:1px solid #2d6a4f;font-family:'Silkscreen',monospace;font-size:10px;padding:4px 10px;border-radius:5px;cursor:pointer;transition:all .2s}
+.btn:hover,.btn.active{background:#2d6a4f;color:#d8f3dc}
+.tgl{display:flex;gap:2px;background:#0f1a14;border-radius:6px;padding:2px;border:1px solid #1b3325}
+.gal{max-width:1400px;margin:0 auto;padding:0 16px 40px}
+.sec{font-family:'Silkscreen',monospace;font-size:11px;color:#40916c;margin:20px 0 10px;display:flex;align-items:center;gap:10px;border-top:1px solid #1b332544;padding-top:14px}
+.sec::after{content:'';flex:1;height:1px;background:#1b332544}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px;align-items:flex-end}
+.card{background:#0f1a14;border:1px solid #1b3325;border-radius:7px;padding:8px;text-align:center;transition:all .3s}
+.card:hover{border-color:#2d6a4f;box-shadow:0 0 12px rgba(45,106,79,.08)}
+.lbl{font-family:'Silkscreen',monospace;font-size:7px;color:#52b788;margin-bottom:4px;letter-spacing:1px}
+.cw{background:#162e22;border-radius:4px;padding:6px;display:inline-block}
+.cw canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block}
+.sp{font-size:7px;color:#3a5a4a;margin-top:3px}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<header>
+  <h1>🪓 SPRITELIB — ROSTER COMPLET</h1>
+  <div class="sub">Player · Ennemis · Bâtiments · Props · Nature</div>
+</header>
+<div class="ctrls">
+  <label>Zoom:</label>
+  <div class="tgl" id="zb">
+    <button class="btn" onclick="setZ(1)">1×</button>
+    <button class="btn active" onclick="setZ(2)">2×</button>
+    <button class="btn" onclick="setZ(3)">3×</button>
+  </div>
+</div>
+<div class="gal" id="gal"></div>
+
+<script>
+// ============================================================
+// SPRITELIB — NON-TREE SPRITES
+// ============================================================
+const px=(c,x,y,cl)=>{c.fillStyle=cl;c.fillRect(x,y,1,1)};
+const rc=(c,x,y,w,h,cl)=>{c.fillStyle=cl;c.fillRect(x,y,w,h)};
+function sr(s){return()=>{s=(s*9301+49297)%233280;return s/233280}}
+function fE(c,cx,cy,rx,ry,cl){for(let y=-ry;y<=ry;y++){const hw=Math.floor(rx*Math.sqrt(Math.max(0,1-y*y/(ry*ry))));if(hw>=0)rc(c,cx-hw,cy+y,hw*2+1,1,cl)}}
+
+const S={}; // sprite defs
+
+// ============ PLAYER (104×128 HD) ============
+// Full lumberjack: flannel, boots, beard, headband, axe
+const DIRS=['d','r','u','l']; // down, right, up, left
+for(let di=0;di<4;di++){
+  for(let fr=0;fr<4;fr++){
+    const k=`p_${DIRS[di]}_${fr}`;
+    S[k]={name:`Player ${DIRS[di].toUpperCase()}${fr}`,w:104,h:128,draw(c,w,h){
+      const bob=fr%2===1?-2:0;
+      const lOff=[0,5,0,-5][fr],rOff=[0,-5,0,5][fr];
+      const laS=fr===1?-3:fr===3?3:0,raS=fr===1?3:fr===3?-3:0;
+      const CX=w/2|0;
+
+      // Shadow
+      c.fillStyle='rgba(0,0,0,0.12)';c.beginPath();c.ellipse(CX,h-6,18,5,0,0,Math.PI*2);c.fill();
+
+      // === BOOTS ===
+      const lyB=98+Math.max(0,lOff)+bob,ryB=98+Math.max(0,rOff)+bob;
+      // Left boot
+      rc(c,26,lyB,16,28-Math.max(0,lOff),'#5C3317');rc(c,28,lyB,12,24-Math.max(0,lOff),'#6B4226');
+      rc(c,26,lyB+24-Math.max(0,lOff),16,4,'#3a1e08'); // sole
+      for(let ly=lyB+4;ly<lyB+16;ly+=4){px(c,32,ly,'#8B6914');px(c,34,ly,'#7a5810')} // laces
+      // Right boot
+      rc(c,60,ryB,16,28-Math.max(0,rOff),'#5C3317');rc(c,62,ryB,12,24-Math.max(0,rOff),'#6B4226');
+      rc(c,60,ryB+24-Math.max(0,rOff),16,4,'#3a1e08');
+      for(let ly=ryB+4;ly<ryB+16;ly+=4){px(c,66,ly,'#8B6914');px(c,68,ly,'#7a5810')}
+
+      // === PANTS ===
+      rc(c,26,74+bob,50,26,'#3d5a80');rc(c,28,74+bob,46,24,'#4a6a90');
+      rc(c,32,76+bob,38,18,'#5078a0');
+      rc(c,48,82+bob,6,12,'#2c4a6e'); // center seam
+      // Knee patches
+      rc(c,32,88+bob,6,4,'#5578a0');rc(c,66,88+bob,6,4,'#5578a0');
+      // Side seams
+      for(let y=76;y<96;y++){px(c,26,y+bob,'#2c4a6e');px(c,74,y+bob,'#2c4a6e')}
+      // Plaid hint
+      for(let y=76;y<96;y+=8)for(let x=28;x<74;x+=10)px(c,x,y+bob,'rgba(60,90,128,0.2)');
+
+      // === BELT ===
+      rc(c,26,72+bob,50,4,'#7a5810');rc(c,26,70+bob,50,2,'#8a6820');
+      rc(c,46,70+bob,10,6,'#DAA520');px(c,48,72+bob,'#B8860B');px(c,50,70+bob,'#e0c040'); // buckle
+      rc(c,66,70+bob,8,10,'#6B4226');px(c,68,72+bob,'#7a5033'); // pouch
+
+      // === TORSO (flannel) ===
+      rc(c,14,34+bob,74,40,'#960d12');rc(c,18,34+bob,66,38,'#b01018');
+      rc(c,22,36+bob,58,32,'#c1121f');rc(c,26,38+bob,50,26,'#d62828');
+      // Plaid pattern
+      for(let y=36;y<68;y+=6)for(let x=20;x<82;x+=8)px(c,x,y+bob,'rgba(150,13,18,0.35)');
+      for(let y=38;y<66;y+=8)for(let x=22;x<80;x+=6)px(c,x,y+bob,'rgba(210,40,40,0.12)');
+      // Wrinkle shadows
+      px(c,18,46+bob,'#800a0e');px(c,20,48+bob,'#800a0e');px(c,80,50+bob,'#800a0e');
+      // Collar
+      rc(c,34,34+bob,34,4,'#c9a06a');rc(c,36,32+bob,30,2,'#dbb07a');
+      if(di===2){px(c,48,36+bob,'#dbb07a');px(c,50,38+bob,'#c9a06a');px(c,52,36+bob,'#dbb07a')} // V-neck front
+      // Suspenders
+      for(let y=38;y<60;y++){px(c,36,y+bob,'#7a5810');px(c,38,y+bob,'#8a6820');px(c,64,y+bob,'#7a5810');px(c,66,y+bob,'#8a6820')}
+
+      // === AXE ON BACK ===
+      if(di===0){for(let i=0;i<28;i++){px(c,30+i,22+bob+i,'#8B6914');px(c,32+i,22+bob+i,'#7a5810');if(i<10){px(c,28+i,20+bob+i,'#bbb');px(c,30+i,20+bob+i,'#ccc')}}}
+      else if(di===1){for(let y=0;y<10;y++){px(c,14,38+bob+y,'#8B6914');px(c,16,38+bob+y,'#7a5810')}px(c,12,34+bob,'#bbb');px(c,14,34+bob,'#ccc')}
+      else if(di===3){for(let y=0;y<10;y++){px(c,86,38+bob+y,'#8B6914');px(c,88,38+bob+y,'#7a5810')}px(c,90,34+bob,'#bbb');px(c,88,34+bob,'#ccc')}
+
+      // === ARMS ===
+      const laY=38+bob+laS,raY=38+bob+raS;
+      rc(c,8,laY,8,20,'#a00e15');rc(c,10,laY,6,18,'#b81520');
+      rc(c,8,laY+16,8,6,'#c9a06a'); // hand
+      rc(c,8,laY+22,10,6,'#8a7040');px(c,10,laY+22,'#9a8050'); // glove
+      rc(c,86,raY,8,20,'#a00e15');rc(c,88,raY,6,18,'#b81520');
+      rc(c,86,raY+16,8,6,'#c9a06a');rc(c,86,raY+22,10,6,'#8a7040');
+
+      // === HEAD ===
+      const hY=bob;
+      rc(c,30,hY,42,30,'#e8c08a');rc(c,34,hY+4,34,22,'#dbb07a');
+      rc(c,38,hY+6,26,16,'#d0a870');rc(c,34,hY+26,34,4,'#c99060');
+      // Ears
+      if(di===1){rc(c,72,hY+12,6,10,'#dbb07a');px(c,74,hY+14,'#c9a06a')}
+      else if(di===3){rc(c,26,hY+12,6,10,'#dbb07a');px(c,28,hY+14,'#c9a06a')}
+      // Nose
+      if(di===2){rc(c,46,hY+18,10,6,'#c9a06a');px(c,48,hY+22,'#b8946a');px(c,52,hY+22,'#b8946a')}
+      else if(di===1){rc(c,72,hY+16,6,6,'#c9a06a');px(c,76,hY+20,'#b8946a')}
+      else if(di===3){rc(c,26,hY+16,6,6,'#c9a06a');px(c,24,hY+20,'#b8946a')}
+
+      // === HAIR ===
+      rc(c,26,hY,52,10,'#4a3728');rc(c,26,hY,10,14,'#3a2a1c');rc(c,66,hY,10,14,'#3a2a1c');
+      for(let x=30;x<72;x+=6)px(c,x,hY,'#3a2a1c');
+      for(let x=32;x<70;x+=8)px(c,x,hY+2,'#5a4838');
+      if(di===0)rc(c,30,hY+4,42,8,'#4a3728'); // back of head
+
+      // === HEADBAND ===
+      rc(c,26,hY+10,52,4,'#8B0000');
+      for(let x=34;x<68;x+=10)px(c,x,hY+10,'#a01010');
+      if(di===3){px(c,22,hY+10,'#6a0808');px(c,24,hY+10,'#7a1010')}
+      else if(di===1){px(c,76,hY+10,'#6a0808');px(c,78,hY+10,'#7a1010')}
+
+      // === BEARD ===
+      if(di===2){
+        rc(c,36,hY+26,30,6,'#5a4030');px(c,36,hY+24,'#5a4030');px(c,64,hY+24,'#5a4030');
+        rc(c,40,hY+30,22,2,'#4a3525');px(c,48,hY+30,'#6a5040');px(c,52,hY+30,'#6a5040');
+      }else if(di===1){
+        rc(c,52,hY+26,18,6,'#5a4030');px(c,66,hY+24,'#5a4030');
+      }else if(di===3){
+        rc(c,32,hY+26,18,6,'#5a4030');px(c,36,hY+24,'#5a4030');
+      }else{
+        rc(c,36,hY+26,30,6,'#5a4030');px(c,32,hY+26,'#4a3525');px(c,68,hY+26,'#4a3525');
+      }
+
+      // === EYES ===
+      if(di===0){rc(c,40,hY+16,4,4,'#2a2a2a');rc(c,60,hY+16,4,4,'#2a2a2a')}
+      else if(di===2){
+        rc(c,36,hY+14,10,2,'#4a3728');rc(c,56,hY+14,10,2,'#4a3728'); // brow
+        rc(c,38,hY+16,8,4,'#e8e8e0');rc(c,56,hY+16,8,4,'#e8e8e0'); // white
+        rc(c,40,hY+16,4,4,'#6a5030');rc(c,58,hY+16,4,4,'#6a5030'); // iris
+        px(c,40,hY+18,'#1a1a1a');px(c,58,hY+18,'#1a1a1a'); // pupil
+        px(c,42,hY+16,'#fff');px(c,60,hY+16,'#fff'); // glint
+      }else if(di===1){
+        rc(c,60,hY+14,10,2,'#4a3728');rc(c,62,hY+16,8,4,'#e8e8e0');
+        px(c,66,hY+18,'#1a1a1a');px(c,64,hY+16,'#fff');
+      }else{
+        rc(c,32,hY+14,10,2,'#4a3728');rc(c,34,hY+16,8,4,'#e8e8e0');
+        px(c,36,hY+18,'#1a1a1a');px(c,38,hY+16,'#fff');
+      }
+    }};
+  }
+}
+
+// ============ SHADOW ENEMY (96×112 HD) ============
+for(let f=0;f<2;f++){
+  S['sh'+f]={name:`Shadow ${f}`,w:96,h:112,draw(c,w,h){
+    const oy=f*4,CX=w/2|0;
+    // Shadow on ground
+    fE(c,CX,h-8,22,6,'rgba(40,20,80,0.15)');
+    // Body core — dark ethereal mass
+    fE(c,CX,48+oy,30,38,'#0a0618');
+    fE(c,CX,44+oy,26,34,'#1a0e30');
+    fE(c,CX,40+oy,20,26,'#2d1850');
+    // Inner glow
+    fE(c,CX,38+oy,12,12,'#3a2068');
+    // Wispy tendrils
+    const rng=sr(f*11+7);
+    for(let i=0;i<10;i++){
+      const tx=CX-20+i*4+Math.floor(Math.sin(i*2+f)*3);
+      for(let j=0;j<10;j++)px(c,tx,78+oy+j,`rgba(45,24,80,${.5-j*.05})`);
+    }
+    // Ethereal wisps
+    for(let i=0;i<20;i++){
+      const wx=CX-18+(rng()*36|0),wy=20+(rng()*50|0);
+      px(c,wx,wy+oy,`rgba(80,40,160,${.08+rng()*.12})`);
+    }
+    // Eyes — glowing purple
+    rc(c,CX-14,28+oy,12,12,'#8844cc');rc(c,CX+4,28+oy,12,12,'#8844cc');
+    rc(c,CX-12,30+oy,8,8,'#b266ff');rc(c,CX+6,30+oy,8,8,'#b266ff');
+    // Eye glow center
+    px(c,CX-8,34+oy,'#e0b0ff');px(c,CX-6,34+oy,'#d9a0ff');
+    px(c,CX+10,34+oy,'#e0b0ff');px(c,CX+12,34+oy,'#d9a0ff');
+    // Mouth slit
+    rc(c,CX-8,52+oy,18,4,'#6030a0');px(c,CX-4,52+oy,'#8050c0');px(c,CX+4,52+oy,'#8050c0');
+  }};
+}
+
+// ============ GOLEM (144×176 HD) ============
+for(let f=0;f<2;f++){
+  S['go'+f]={name:`Golem ${f}`,w:144,h:176,draw(c,w,h){
+    const oy=f*4,CX=w/2|0;
+    // Ground shadow
+    fE(c,CX,h-10,34,8,'rgba(40,20,8,0.15)');
+    // Body mass — stony bark
+    fE(c,CX,80+oy,50,64,'#2a1808');
+    fE(c,CX,76+oy,46,60,'#3a2410');
+    // Zone shading on body
+    for(let y=30;y<130;y++){
+      for(let x=CX-38;x<CX+38;x++){
+        const dx=x-CX,dy=y-80,d=Math.sqrt(dx*dx/(40*40)+dy*dy/(56*56));
+        if(d>1)continue;
+        const xn=(x-(CX-38))/76;
+        let cl;
+        if(xn<.2)cl='#2a1808';else if(xn<.4)cl='#3a2810';else if(xn<.6)cl='#4a3818';else if(xn<.8)cl='#3a2810';else cl='#2a1808';
+        if(d>.85)cl='#1a1005';
+        px(c,x,y+oy,cl);
+      }
+    }
+    // Rock plate textures
+    const rng=sr(600+f*50);
+    for(let i=0;i<10;i++){rc(c,CX-24+i*6,84+oy+i%4*2,6,2,'#3a1e08')}
+    // Arms
+    rc(c,4,56+oy,20,56,'#4a2a10');rc(c,8,56+oy,12,52,'#5e3a1a');
+    rc(c,120,56+oy,20,56,'#4a2a10');rc(c,124,56+oy,12,52,'#5e3a1a');
+    // Fists
+    rc(c,4,108+oy,20,16,'#3a1e08');rc(c,8,110+oy,12,12,'#4a2a10');
+    rc(c,120,108+oy,20,16,'#3a1e08');rc(c,124,110+oy,12,12,'#4a2a10');
+    // Moss on shoulders
+    fE(c,28,50+oy,12,6,'#2d6a4f');fE(c,28,50+oy,10,4,'#40916c');
+    fE(c,116,60+oy,12,5,'#2d6a4f');fE(c,116,60+oy,10,4,'#40916c');
+    // Magma cracks
+    for(let i=0;i<6;i++){
+      const fx=CX-16+i*8,fy=88+oy+(i%2)*8;
+      for(let j=0;j<6;j++){px(c,fx+j,fy+j,'#ff4400');px(c,fx+j+1,fy+j,'#ff8844')}
+      px(c,fx+3,fy+3,'#ffaa66');
+    }
+    // Eyes — smoldering red
+    rc(c,CX-22,36+oy,16,16,'#aa1100');rc(c,CX+8,36+oy,16,16,'#aa1100');
+    rc(c,CX-18,40+oy,10,10,'#ff2200');rc(c,CX+12,40+oy,10,10,'#ff2200');
+    px(c,CX-14,44+oy,'#ff8844');px(c,CX-12,44+oy,'#ffaa66');px(c,CX-10,46+oy,'#ffcc88');
+    px(c,CX+16,44+oy,'#ff8844');px(c,CX+18,44+oy,'#ffaa66');px(c,CX+20,46+oy,'#ffcc88');
+    // Mouth magma crack
+    rc(c,CX-12,64+oy,26,8,'#2a0808');
+    px(c,CX-8,64+oy,'#ff2200');px(c,CX+10,64+oy,'#ff2200');
+    px(c,CX-4,68+oy,'#ff4400');px(c,CX+6,68+oy,'#ff4400');
+    px(c,CX,68+oy,'#ff6600');px(c,CX+3,68+oy,'#ff8800');
+  }};
+}
+
+// ============ BUILDINGS (×2 HD resolution) ============
+
+S.shop_b={name:'Herboriste',w:136,h:120,draw(c,w,h){
+  // Walls
+  rc(c,16,56,104,60,'#b08050');rc(c,20,60,96,52,'#c9a86c');
+  for(let y=60;y<112;y++)for(let x=20;x<116;x++){if((x*11+y*17)%19===0)px(c,x,y,'#bfa060')}
+  // Timber frame
+  rc(c,16,56,4,60,'#6B4226');rc(c,116,56,4,60,'#6B4226');rc(c,16,80,104,4,'#6B4226');rc(c,64,56,4,60,'#5C3317');
+  // Roof
+  for(let y=0;y<56;y++){const rw=44+y*2.8|0,sx=68-(rw/2|0);
+    for(let x=sx;x<sx+rw;x++)px(c,x,y,((x+y)%4===0)?'#6a2208':y%3?'#7a2a10':'#8B3A15')}
+  rc(c,64,0,8,4,'#aaa');px(c,62,0,'#999'); // ridge
+  // Chimney
+  rc(c,100,0,16,36,'#666');rc(c,100,0,16,4,'#888');for(let y=4;y<32;y+=6){px(c,104,y,'#777');px(c,110,y,'#777')}
+  // Door
+  rc(c,52,76,32,44,'#5C3317');rc(c,56,80,24,36,'#6B4226');
+  px(c,76,94,'#DAA520');px(c,76,92,'#B8860B');px(c,76,96,'#a88020'); // handle
+  // Windows
+  rc(c,24,64,20,16,'#444');rc(c,26,66,16,12,'#87CEEB');px(c,34,66,1,12,'#5C3317');px(c,26,72,16,1,'#5C3317');
+  rc(c,92,64,20,16,'#444');rc(c,94,66,16,12,'#6BB3D9');px(c,102,66,1,12,'#5C3317');
+  // Sign
+  rc(c,52,56,32,10,'#5C3317');px(c,62,60,'#ddd');px(c,64,60,'#ddd');px(c,66,62,'#ddd');
+  // Lantern
+  px(c,20,64,'#DAA520');px(c,20,66,'#ff8800');px(c,20,68,'#ff6600');
+}};
+
+S.forge_b={name:'Forgeron',w:144,h:128,draw(c,w,h){
+  // Stone walls
+  rc(c,16,56,112,68,'#8a8070');rc(c,20,60,104,60,'#9a9080');
+  for(let y=60;y<120;y++)for(let x=20;x<124;x++){if((x*7+y*11)%13===0)px(c,x,y,'#807868')}
+  rc(c,16,56,4,68,'#5C3317');rc(c,124,56,4,68,'#5C3317');rc(c,16,88,112,4,'#5C3317');
+  // Roof (dark slate)
+  for(let y=0;y<56;y++){const rw=40+y*2.6|0,sx=72-(rw/2|0);for(let x=sx;x<sx+rw;x++)px(c,x,y,y%2?'#556':'#667')}
+  rc(c,68,0,8,4,'#888');
+  // Big chimney
+  rc(c,108,0,28,56,'#777');rc(c,112,0,20,48,'#888');for(let y=4;y<44;y+=6){px(c,116,y,'#999');px(c,122,y,'#666')}
+  // Smoke
+  px(c,116,-4,'#aaa');px(c,118,-8,'#bbb');px(c,114,-12,'#ccc');
+  // Door
+  rc(c,56,80,32,44,'#5C3317');rc(c,60,84,24,36,'#6B4226');px(c,80,98,'#DAA520');px(c,80,100,'#B8860B');
+  // Anvil
+  rc(c,8,104,16,12,'#555');rc(c,4,100,24,6,'#666');px(c,14,100,'#888');
+  // Forge glow window
+  rc(c,28,68,20,16,'#444');rc(c,30,70,16,12,'#ff6600');px(c,34,72,'#ff8844');px(c,38,74,'#ffaa66');
+  rc(c,96,68,20,16,'#444');rc(c,98,70,16,12,'#ff4400');
+  // Hammer
+  rc(c,128,72,8,20,'#8B6914');px(c,130,68,'#bbb');px(c,132,68,'#ccc');
+  // Sign
+  rc(c,48,52,36,10,'#5C3317');px(c,60,54,'#ccc');px(c,62,54,'#ccc');px(c,64,56,'#aaa');px(c,66,54,'#bbb');
+}};
+
+S.cham_b={name:'Chaman',w:136,h:128,draw(c,w,h){
+  // Round walls
+  for(let y=56;y<116;y++)for(let x=12;x<124;x++){
+    const cx2=68,cy2=86,rx2=56,ry2=30;
+    if(((x-cx2)**2)/(rx2*rx2)+((y-cy2)**2)/(ry2*ry2)<1)
+      px(c,x,y,['#b08050','#a07040','#c09060','#b88858'][(x*3+y*7)%4]);
+  }
+  // Thatch roof
+  for(let y=8;y<60;y++){const rw=36+y*2|0,sx=68-(rw/2|0);for(let x=sx;x<sx+rw;x++){
+    const rc2=(x*5+y*3)%5;px(c,x,y,rc2<2?'#6B4226':rc2<4?'#8B6914':'#5C3317');
+    if(y%3===0&&x%4===0)px(c,x,y,'#40916c');
+  }}
+  // Hanging herbs
+  for(let i=0;i<6;i++){const hx=24+i*16;for(let j=0;j<8;j++)px(c,hx,56+j,['#52b788','#40916c','#2d6a4f','#357a58','#244f38','#2d6a4f','#40916c','#52b788'][j])}
+  // Door
+  rc(c,56,76,24,40,'#5C3317');rc(c,58,80,20,32,'#6B4226');px(c,74,94,'#52b788');px(c,74,96,'#40916c');
+  // Green glow window
+  rc(c,92,72,20,16,'#444');rc(c,94,74,16,12,'#1a4a2a');px(c,98,76,'#52b788');px(c,102,78,'#74c69d');
+  // Mortar & pestle
+  rc(c,32,104,12,12,'#888');rc(c,34,104,8,8,'#aaa');px(c,38,100,'#6B4226');px(c,38,98,'#8B6914');
+  // Potions
+  px(c,100,68,'#e74c3c');px(c,104,68,'#52b788');px(c,108,68,'#3498db');px(c,112,68,'#e9c46a');
+  // Sign
+  rc(c,44,52,40,10,'#5C3317');px(c,58,54,'#52b788');px(c,62,54,'#74c69d');px(c,66,56,'#52b788');
+  // Incense smoke
+  c.fillStyle='rgba(100,180,130,0.3)';c.fillRect(100,56,4,4);c.fillRect(104,48,3,5);c.fillRect(98,40,3,4);
+}};
+
+S.tav_b={name:'Taverne',w:160,h:136,draw(c,w,h){
+  // Walls
+  rc(c,12,56,136,76,'#b08050');rc(c,16,60,128,68,'#c9a86c');
+  for(let y=60;y<128;y++)for(let x=16;x<144;x++){if((x*11+y*17)%19===0)px(c,x,y,'#bfa060')}
+  rc(c,12,56,4,76,'#5C3317');rc(c,144,56,4,76,'#5C3317');rc(c,12,88,136,4,'#5C3317');rc(c,76,56,4,76,'#5C3317');
+  // Roof
+  for(let y=0;y<56;y++){const rw=52+y*2.8|0,sx=80-(rw/2|0);for(let x=sx;x<sx+rw;x++)
+    px(c,x,y,((x+y)%4===0)?'#7a2a10':y%3?'#8B3A15':'#6a2208')}
+  rc(c,76,0,8,4,'#aaa');
+  // Door
+  rc(c,64,80,32,52,'#5C3317');rc(c,68,84,24,44,'#6B4226');rc(c,70,86,20,40,'#3a2010'); // open effect
+  px(c,88,102,'#DAA520');px(c,88,104,'#B8860B');
+  // Windows warm glow
+  rc(c,24,64,24,20,'#444');rc(c,26,66,20,16,'#ff9944');px(c,32,70,'#ffcc88');px(c,38,72,'#ffbb66');
+  rc(c,112,64,24,20,'#444');rc(c,114,66,20,16,'#ff8833');px(c,120,70,'#ffcc88');
+  // Barrel
+  rc(c,4,108,16,24,'#6B4226');rc(c,6,108,12,20,'#7a5033');
+  for(let y=112;y<128;y+=4)rc(c,4,y,16,2,'#5C3317');px(c,10,108,'#8B6914');
+  // Sign
+  rc(c,96,44,28,16,'#5C3317');rc(c,98,46,24,12,'#6B4226');
+  px(c,104,48,'#DAA520');px(c,106,48,'#DAA520');px(c,108,50,'#B8860B');px(c,110,48,'#DAA520');
+  // Chimney
+  rc(c,128,0,16,44,'#777');px(c,134,0,'#888');
+  // Bench
+  rc(c,144,112,12,6,'#6B4226');rc(c,144,118,12,10,'#5C3317');
+  // Lantern
+  px(c,14,64,'#DAA520');px(c,14,66,'#ff8800');px(c,14,68,'#ff6600');
+}};
+
+S.emis_b={name:'Émissaire',w:144,h:128,draw(c,w,h){
+  // Walls geometric
+  rc(c,16,48,112,76,'#c0b8a0');rc(c,20,52,104,68,'#d0c8b0');
+  for(let y=52;y<120;y+=8)for(let x=20;x<124;x+=8)px(c,x,y,'#a8a090');
+  // Metal frame
+  rc(c,16,48,4,76,'#888');rc(c,124,48,4,76,'#888');rc(c,16,48,112,4,'#999');rc(c,16,84,112,4,'#888');
+  // Flat roof
+  rc(c,8,32,128,20,'#aaa');rc(c,12,36,120,12,'#bbb');
+  for(let x=16;x<128;x+=12)rc(c,x,32,4,20,'#999');
+  for(let x=20;x<124;x+=16){px(c,x,34,'#ccc');px(c,x,46,'#ccc')}
+  // Door
+  rc(c,56,72,32,52,'#888');rc(c,60,76,24,44,'#6B4226');rc(c,62,78,20,40,'#7a5033');
+  px(c,80,96,'#DAA520');px(c,80,98,'#B8860B');
+  // Glass windows
+  rc(c,28,56,20,20,'#333');rc(c,30,58,16,16,'#87CEEB');
+  rc(c,96,56,20,20,'#333');rc(c,98,58,16,16,'#87CEEB');
+  // Logo
+  rc(c,60,36,24,12,'#555');rc(c,64,38,16,2,'#DAA520');rc(c,64,42,12,2,'#DAA520');rc(c,64,46,16,2,'#DAA520');
+  // Industrial crate
+  rc(c,132,100,12,24,'#888');rc(c,134,102,8,20,'#999');px(c,136,108,'#DAA520');
+  // Industrial lanterns
+  rc(c,12,56,6,12,'#999');px(c,14,60,'#fff');px(c,14,62,'#ffe');
+  rc(c,126,56,6,12,'#999');px(c,128,60,'#fff');
+}};
+
+S.home_b={name:'Maison',w:144,h:128,draw(c,w,h){
+  // Foundation
+  rc(c,16,96,112,28,'#5a4a30');rc(c,20,100,104,20,'#6a5a40');
+  // Walls
+  rc(c,20,36,104,64,'#b89868');rc(c,24,40,96,56,'#c8a878');
+  for(let y=40;y<96;y+=8){rc(c,24,y,96,2,'#a08858');rc(c,24,y+4,96,2,'#d0b888')}
+  // Door
+  rc(c,56,64,32,36,'#6a4020');rc(c,60,68,24,28,'#7a5030');rc(c,60,68,24,2,'#8a6040');rc(c,80,80,4,6,'#c8a060');
+  // Windows
+  rc(c,28,52,20,20,'#3a6090');rc(c,30,54,16,16,'#5080b0');rc(c,28,52,20,2,'#8a7050');rc(c,28,70,20,2,'#8a7050');rc(c,38,54,2,16,'#8a7050');
+  rc(c,96,52,20,20,'#3a6090');rc(c,98,54,16,16,'#5080b0');rc(c,96,52,20,2,'#8a7050');rc(c,96,70,20,2,'#8a7050');rc(c,106,54,2,16,'#8a7050');
+  // Roof
+  for(let y=8;y<40;y++){const rw=60+y*2.6|0,sx=72-(rw/2|0)|0;rc(c,Math.max(0,sx),y,Math.min(144,rw),1,y%2?'#8a7040':'#9a8050')}
+  rc(c,32,6,80,6,'#7a6030');rc(c,36,4,72,4,'#6a5020');
+  // Chimney
+  rc(c,100,0,16,24,'#8a7a6a');rc(c,104,0,8,20,'#9a8a7a');rc(c,100,0,16,4,'#6a6058');
+  // Porch
+  rc(c,44,60,56,4,'#8a7040');
+  // Flower boxes
+  rc(c,28,72,20,4,'#6a4020');px(c,32,70,'#e06060');px(c,36,70,'#e0e060');px(c,40,70,'#e06060');
+  rc(c,96,72,20,4,'#6a4020');px(c,100,70,'#6060e0');px(c,104,70,'#e0e060');px(c,108,70,'#6060e0');
+}};
+
+// ============ PROPS (×2 HD) ============
+S.well_s={name:'Puits',w:64,h:72,draw(c,w,h){
+  fE(c,32,48,24,12,'#888');rc(c,12,36,40,16,'#888');rc(c,16,36,32,12,'#999');
+  fE(c,32,40,16,8,'#222');fE(c,32,40,14,6,'#333');
+  rc(c,8,8,4,32,'#6B4226');rc(c,52,8,4,32,'#6B4226');rc(c,4,4,56,6,'#5C3317');rc(c,8,6,48,4,'#6B4226');
+  for(let y=0;y<8;y++){const rw=16+y*5|0;rc(c,32-(rw/2|0),y,rw,1,y<4?'#8B6914':'#6B4226')}
+  px(c,32,12,'#b0a080');px(c,32,16,'#a09070');px(c,32,20,'#b0a080');px(c,32,24,'#a09070');
+  rc(c,28,26,10,8,'#6B4226');px(c,30,26,'#8B6914');
+  px(c,28,42,'#4488cc');px(c,36,44,'#5599dd');
+}};
+
+S.fence_s={name:'Clôture',w:48,h:40,draw(c,w,h){
+  rc(c,4,8,6,32,'#6B4226');rc(c,38,8,6,32,'#6B4226');
+  px(c,6,6,'#8B6914');px(c,40,6,'#8B6914');
+  rc(c,4,16,40,4,'#8B6914');rc(c,4,28,40,4,'#7a5810');
+  px(c,8,16,'#aaa');px(c,8,28,'#aaa');px(c,40,16,'#aaa');px(c,40,28,'#aaa');
+}};
+
+S.crate_s={name:'Caisse',w:56,h:48,draw(c,w,h){
+  rc(c,8,8,40,36,'#8B6914');rc(c,10,10,36,32,'#a88020');
+  for(let x=8;x<=48;x+=10)rc(c,x,8,2,36,'#6B4226');rc(c,8,24,40,2,'#7a5810');
+  rc(c,8,8,40,2,'#888');rc(c,8,42,40,2,'#888');
+  rc(c,12,4,32,6,'#b89828');rc(c,14,4,28,4,'#c0a830');
+}};
+
+S.lamp_s={name:'Lampadaire',w:32,h:80,draw(c,w,h){
+  rc(c,12,24,8,56,'#555');rc(c,14,24,4,56,'#666');
+  rc(c,8,76,16,4,'#444');rc(c,4,78,24,2,'#555');
+  rc(c,6,8,20,18,'#444');rc(c,8,10,16,14,'#555');
+  rc(c,10,12,12,10,'#ff9944');px(c,14,14,'#ffcc88');px(c,16,16,'#ffbb66');
+  rc(c,10,4,12,6,'#666');px(c,14,2,'#777');
+  rc(c,6,6,2,4,'#555');rc(c,24,6,2,4,'#555');
+}};
+
+S.cart_s={name:'Chariot',w:96,h:64,draw(c,w,h){
+  rc(c,16,16,64,32,'#8B6914');rc(c,18,18,60,28,'#a88020');
+  for(let y=16;y<48;y+=8)rc(c,16,y,64,2,'#6B4226');
+  for(let a=0;a<Math.PI*2;a+=.15){
+    px(c,16+Math.cos(a)*10|0,52+Math.sin(a)*10|0,'#5C3317');
+    px(c,80+Math.cos(a)*10|0,52+Math.sin(a)*10|0,'#5C3317');
+  }
+  px(c,16,52,'#888');px(c,80,52,'#888');
+  rc(c,80,28,16,6,'#6B4226');px(c,92,30,'#7a5033');
+  for(let i=0;i<8;i++){px(c,24+i*6,16+i%3*2,'#DAA520');px(c,28+i*6,18+i%2*2,'#e8c030')}
+}};
+
+S.sign_s={name:'Panneau',w:48,h:64,draw(c,w,h){
+  rc(c,20,32,8,32,'#6B4226');rc(c,22,32,4,32,'#7a5033');
+  rc(c,4,8,40,28,'#8B6914');rc(c,6,10,36,24,'#a88020');
+  rc(c,12,18,20,6,'#5C3317');
+  for(let i=0;i<8;i++)px(c,32+i,20-i,'#5C3317');
+  for(let i=0;i<8;i++)px(c,32+i,20+i,'#5C3317');
+}};
+
+// ============ NATURE (×2 HD) ============
+S.stmp={name:'Souche',w:88,h:56,draw(c,w,h){
+  const CX=w/2|0;
+  // Bark
+  for(let y=20;y<52;y++){const flare=((y-20)/32)**2*6|0;const lx=CX-20-flare,rx=CX+20+flare;
+    for(let x=lx;x<rx;x++){const xn=(x-lx)/(rx-lx);
+      px(c,x,y,xn<.15?'#3a2010':xn<.35?'#5C3317':xn<.6?'#7A5033':xn<.8?'#5C3317':'#3a2010');
+    }
+  }
+  // Top (growth rings)
+  fE(c,CX,20,22,8,'#b08060');fE(c,CX,19,20,7,'#c0a080');
+  for(let r=4;r<18;r+=4)for(let a=0;a<Math.PI*2;a+=.15)
+    px(c,CX+Math.cos(a)*r*1.1|0,20+Math.sin(a)*r*.35|0,'#a89070');
+  rc(c,CX-1,18,6,4,'#c0a880'); // heart
+  // Mushroom
+  rc(c,CX+20,34,4,6,'#8a7050');rc(c,CX+18,32,8,3,'#a08060');px(c,CX+22,30,'#b09070');
+  // New shoot
+  px(c,CX-8,16,'#52b788');px(c,CX-8,14,'#74c69d');px(c,CX-10,14,'#40916c');px(c,CX-8,12,'#82d4a0');
+  // Sawdust
+  for(let i=0;i<6;i++){px(c,16+i*10,50,'rgba(180,150,100,0.3)');px(c,20+i*10,52,'rgba(160,130,80,0.2)')}
+}};
+
+const bushCols=[
+  {b:['#3a8c5e','#2d7a4e','#4a9c6e','#358a55'],h:'#48a468',s:'#1a4a2a',flower:null},
+  {b:['#4a8c3e','#3d7a32','#5a9c4e','#3a8040'],h:'#529440',s:'#1a4a2a',flower:'#e74c3c'},
+  {b:['#2d8a6a','#207848','#3a9a7a','#258a58'],h:'#35a06a',s:'#1a4a2a',flower:'#e9c46a'},
+];
+for(let v=0;v<3;v++){
+  S['bu'+v]={name:`Buisson ${v}`,w:88,h:64,draw(c,w,h){
+    const bc=bushCols[v],CX=w/2|0,CY=36;
+    // Shadow
+    fE(c,CX,CY+12,28,10,bc.s);
+    // Main body blob
+    fE(c,CX,CY,30,18,'#1a3a1e');
+    // Zone-shaded ellipse
+    for(let y=-18;y<=18;y++){const hw=Math.floor(30*Math.sqrt(Math.max(0,1-y*y/(18*18))));
+      for(let x=-hw;x<=hw;x++){const d=Math.sqrt(x*x/(30*30)+y*y/(18*18));
+        const ld=Math.sqrt((x+10)**2+(y+8)**2)/36;
+        let cl;if(ld<.4)cl=bc.h;else if(ld<.65)cl=bc.b[0];else if(y>4)cl=bc.s;else cl=bc.b[2];
+        if(d>.9)cl=bc.s;px(c,CX+x,CY+y,cl);
+      }
+    }
+    // Edge clusters
+    const rng=sr(v*5);for(let i=0;i<12;i++){
+      const a=i/12*Math.PI*2;px(c,CX+Math.cos(a)*28|0,CY+Math.sin(a)*16|0,bc.b[i%4])}
+    // Flowers
+    if(bc.flower)[[CX-12,CY-6],[CX+14,CY-4],[CX-4,CY-10],[CX+18,CY+2]].forEach(([fx,fy])=>px(c,fx,fy,bc.flower));
+  }};
+}
+
+const flCols=[['#e9c46a','#f4e285'],['#e76f51','#f4a261'],['#a8dadc','#caf0f8'],['#e0aaff','#c77dff']];
+for(let i=0;i<4;i++){
+  S['fl'+i]={name:`Fleur ${i}`,w:56,h:64,draw(c,w,h){
+    const CX=w/2|0;
+    // Stem
+    rc(c,CX-2,32,6,28,'#40916c');px(c,CX,36,'#52b788');px(c,CX-2,40,'#358a55');
+    // Leaves
+    rc(c,CX-8,40,6,4,'#52b788');rc(c,CX-10,40,4,2,'#74c69d');
+    rc(c,CX+6,44,6,4,'#52b788');rc(c,CX+8,44,4,2,'#74c69d');
+    // Petals
+    const c1=flCols[i][0],c2=flCols[i][1];
+    [[CX-6,8],[CX+4,8],[CX-8,14],[CX+6,14],[CX-8,22],[CX+6,22],[CX-6,26],[CX+4,26],[CX-12,18],[CX+10,18],[CX-6,4],[CX+4,4]].forEach(([fx,fy],j)=>{
+      rc(c,fx,fy,6,4,j<6?c1:c2);if(j<6)px(c,fx+1,fy+3,flCols[i][1]);
+    });
+    // Center
+    rc(c,CX-3,12,8,10,c2);rc(c,CX-1,14,4,6,c2);
+    px(c,CX-1,14,'#fff');px(c,CX+2,16,'#fff');
+  }};
+}
+
+for(let v=0;v<2;v++){
+  S['rk'+v]={name:`Rocher ${v}`,w:72,h:56,draw(c,w,h){
+    const CX=w/2|0,CY=28,rng=sr(v*3);
+    const gc=v?['#8a8a8a','#999','#aaa','#b0b0b0']:['#777','#888','#999','#7a7a7a'];
+    // Shadow
+    fE(c,CX,CY+12,26,8,'rgba(30,30,30,0.12)');
+    // Main rock shape — zone shaded
+    for(let y=-16;y<=16;y++){const hw=Math.floor(28*Math.sqrt(Math.max(0,1-y*y/(16*16))));
+      for(let x=-hw;x<=hw;x++){const ld=Math.sqrt((x+10)**2+(y+6)**2)/32;
+        let cl;if(ld<.4)cl=gc[2];else if(ld<.7)cl=gc[0];else cl=gc[3];
+        if(Math.sqrt(x*x/(28*28)+y*y/(16*16))>.9)cl='#555';
+        px(c,CX+x,CY+y,cl);
+      }
+    }
+    // Highlight
+    for(let i=0;i<4;i++){px(c,CX-8+i*4,CY-12+i,'#ccc');px(c,CX-7+i*4,CY-12+i,'#bbb')}
+    // Crack
+    for(let i=0;i<8;i++)px(c,CX-4+i,CY+Math.sin(i*.8)*3|0,'#555');
+    // Moss (variant 1 only)
+    if(v)for(let x=-8;x<8;x++)for(let y=0;y<4;y++)if(rng()>.5)px(c,CX+x,CY+8+y,'#2d6a4f');
+  }};
+}
+
+S.mush={name:'Champ. Corr.',w:72,h:56,draw(c,w,h){
+  // Large
+  rc(c,20,28,12,28,'#4a2060');rc(c,16,16,20,14,'#6a3080');px(c,20,12,'#7a3890');px(c,28,12,'#5a2870');px(c,24,8,'#8a40a0');
+  // Medium
+  rc(c,44,32,10,24,'#3a1850');rc(c,40,24,18,10,'#5a2870');px(c,48,20,'#7a3890');
+  // Small
+  rc(c,60,40,6,8,'#4a2060');rc(c,56,36,14,6,'#5a2870');px(c,62,32,'#6a3080');
+  // Glow
+  px(c,20,16,'#b266ff');px(c,48,24,'#b266ff');px(c,60,36,'#9050d0');px(c,28,16,'#d088ff');
+  // Mycelium
+  px(c,12,48,'#3a1850');px(c,36,52,'#2d1040');px(c,56,44,'#3a1850');px(c,64,48,'#2d1040');
+  // Spores
+  const rng=sr(42);for(let i=0;i<10;i++)px(c,8+(rng()*56|0),4+(rng()*16|0),`rgba(178,102,255,${.15+rng()*.2})`);
+}};
+
+S.herb_s={name:'Herbe méd.',w:32,h:32,draw(c,w,h){
+  rc(c,14,16,4,12,'#3a7a40');rc(c,12,12,2,6,'#3a7a40');
+  rc(c,8,8,6,4,'#52b788');rc(c,18,6,6,4,'#52b788');rc(c,10,12,4,4,'#52b788');rc(c,18,10,6,4,'#52b788');
+  rc(c,6,10,4,2,'#52b788');rc(c,22,8,4,2,'#52b788');
+  px(c,10,8,'#74c69d');px(c,20,6,'#74c69d');px(c,12,12,'#74c69d');
+  px(c,10,6,'#e8e0a0');px(c,20,4,'#e8e0a0'); // flowers
+  rc(c,14,28,4,2,'#6a5a40'); // root
+}};
+
+S.mush_s={name:'Champignon',w:32,h:32,draw(c,w,h){
+  rc(c,12,16,8,12,'#d0c8b0');rc(c,14,16,4,12,'#c0b8a0');
+  rc(c,6,8,20,8,'#8a5090');rc(c,8,6,16,2,'#8a5090');rc(c,10,4,12,2,'#8a5090');
+  px(c,10,6,'#c080d0');px(c,18,8,'#c080d0');px(c,14,4,'#c080d0');
+  rc(c,8,8,6,2,'#a068a8');
+  rc(c,6,14,20,2,'#6a3870'); // shadow
+  rc(c,10,16,12,2,'rgba(200,180,160,0.4)'); // gills
+}};
+
+// ============ RENDER ============
+const _c={};
+function gen(k){const d=S[k];if(!d)return null;if(_c[k])return _c[k];const cv=document.createElement('canvas');cv.width=d.w;cv.height=d.h;const cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;d.draw(cx,d.w,d.h);_c[k]=cv;return cv}
+
+const sections=[
+  {name:'🏃 PLAYER (direction face)',keys:['p_d_0','p_d_1','p_d_2','p_d_3']},
+  {name:'🏃 PLAYER (dos)',keys:['p_u_0','p_u_1','p_u_2','p_u_3']},
+  {name:'🏃 PLAYER (droite / gauche)',keys:['p_r_0','p_r_1','p_l_0','p_l_1']},
+  {name:'👾 ENNEMIS',keys:['sh0','sh1','go0','go1']},
+  {name:'🏘️ BÂTIMENTS',keys:['shop_b','forge_b','cham_b','tav_b','emis_b','home_b']},
+  {name:'🪑 PROPS',keys:['well_s','fence_s','crate_s','lamp_s','cart_s','sign_s']},
+  {name:'🌿 NATURE',keys:['stmp','bu0','bu1','bu2','fl0','fl1','fl2','fl3','rk0','rk1','mush','herb_s','mush_s']},
+];
+
+let Z=2;
+function render(){
+  const g=document.getElementById('gal');g.innerHTML='';
+  for(const sec of sections){
+    const hdr=document.createElement('div');hdr.className='sec';hdr.textContent=sec.name;g.appendChild(hdr);
+    const row=document.createElement('div');row.className='row';
+    for(const k of sec.keys){
+      const d=S[k];if(!d)continue;
+      const card=document.createElement('div');card.className='card';
+      const lbl=document.createElement('div');lbl.className='lbl';lbl.textContent=d.name.toUpperCase();card.appendChild(lbl);
+      const cw=document.createElement('div');cw.className='cw';
+      const cv=document.createElement('canvas');cv.width=d.w;cv.height=d.h;cv.style.width=d.w*Z+'px';cv.style.height=d.h*Z+'px';
+      const cx=cv.getContext('2d');cx.imageSmoothingEnabled=false;cx.drawImage(gen(k),0,0);
+      cw.appendChild(cv);card.appendChild(cw);
+      const sp=document.createElement('div');sp.className='sp';sp.textContent=`${d.w}×${d.h}`;card.appendChild(sp);
+      row.appendChild(card);
+    }
+    g.appendChild(row);
+  }
+}
+function setZ(z){Z=z;document.querySelectorAll('#zb .btn').forEach((b,i)=>b.classList.toggle('active',i===z-1));render()}
+render();
+</script>
+</body>
+</html>
