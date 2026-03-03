@@ -55,7 +55,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <canvas id="mm" width="128" height="112"></canvas>
 <div id="time-ind"></div>
 <div id="ui"><div class="pn" id="st"></div><div class="pn" id="inv"></div></div>
-<div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · TAB: éditeur</div>
+<div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · TAB: éditeur</div>
 <div id="shp"><div id="dlg"><div id="dlg-box"><canvas id="dlg-portrait" width="80" height="80"></canvas><div id="dlg-right"><div id="dlg-name"></div><div id="dlg-text"></div></div></div><button id="dlg-next" onclick="advanceDialogue()">...</button></div><h2>🏠 Village</h2><div id="si2"></div><p style="margin-top:6px;font-size:8px;color:#52b788;text-align:center">E / Échap: fermer</p></div>
 <div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button></div>
 <div id="intro-cin" style="position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:100;display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer">
@@ -141,6 +141,21 @@ const TUNING = {
   mushsForEncens: 5,
   herbsPerClearing: 2,       // herbs spawned per clearing
   mushsPerClearing: 1,       // mushrooms spawned per clearing
+  // -- Sacred Tree Aura --
+  sacredAuraRadius: 8,        // tiles of anti-corruption protection
+  sacredMiniBossHp: 15,       // HP of sacred tree guardian mini-boss
+  sacredMiniBossDmg: 3,
+  // -- Purification (enhanced) --
+  purifyEssenceCost: 2,       // spiritual essences per ritual
+  purifySapCost: 3,           // sap per ritual
+  purifyRadius: 10,           // tile radius of purification
+  // -- Replanting --
+  seedBagWeight: 1,           // bag space per seed
+  jardinierSeedCount: 20,     // seeds given by Ermite Jardinier
+  plantedRegrowTime: 1,       // day/night cycles before regrow after cut (1 cycle)
+  seedGrowTime: 1,            // day/night cycles for seed→tree
+  // -- Instruments --
+  instrumentBagWeight: 2,     // bag space per instrument
 };
 const TUNING_DEFAULT = JSON.parse(JSON.stringify(TUNING));
 const TUNING_META = {
@@ -284,6 +299,13 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   ERO:95, // Érable ondé (forêt mixte rare)
   // Luthier
   LUTH:48,
+  // New systems
+  ARBRE_CHANT:100, // Arbre-Chant unique sacred tree (player-planted)
+  SEED_TILE:101,   // Growing seed (sapling from Jardinier seeds)
+  BROKEN_AXE:102,  // Broken legendary axe (world pickup)
+  HERM_E:110,      // Estelle — Combat Hermit
+  HERM_J:111,      // Ermite Jardinier
+  HERM_T:112,      // Ermite Triste
 };
 // Essence data lookup
 const ESS={
@@ -299,7 +321,7 @@ const ESS={
   [TT.TIL]:{name:'Tilleul ancien',hp:10,wood:9,gold:4,sap:2,sapGold:6,regrow:0,spr:'til',noise:.9,leaf:2,minAxe:3},
   [TT.SEQ]:{name:'Séquoia',hp:18,wood:15,gold:8,sap:4,sapGold:12,regrow:0,spr:'seq',noise:1,leaf:3,minAxe:4},
   [TT.PET]:{name:'Bois Pétrifié',hp:20,wood:12,gold:10,sap:0,regrow:0,spr:'pet',noise:1,leaf:3,minAxe:4},
-  [TT.TJ]:{name:'Sacré',hp:25,wood:20,gold:10,sap:5,sapGold:50,regrow:0,spr:'tj',noise:1,leaf:3,minAxe:99},
+  [TT.TJ]:{name:'Sacré',hp:25,wood:20,gold:10,sap:5,sapGold:50,regrow:0,spr:'tj',noise:1,leaf:3,minAxe:3,sacred:true},
   [TT.PRIM]:{name:'Arbre Primordial',hp:100,wood:50,gold:100,sap:20,sapGold:200,regrow:0,spr:'prim',noise:1,leaf:3,minAxe:4},
   // Marécage
   [TT.EBE]:{name:'Ébène',hp:14,wood:6,gold:12,sap:1,sapGold:10,regrow:0,spr:'ebe',noise:.8,leaf:2,minAxe:3,rare:true},
@@ -314,6 +336,8 @@ const ESS={
   [TT.BPB]:{name:'Bouleau pubescent',hp:4,wood:3,gold:2,sap:0,regrow:900,spr:'bpb',noise:.4,leaf:1,minAxe:1},
   // Rare (forêt mixte)
   [TT.ERO]:{name:'Érable ondé',hp:9,wood:4,gold:14,sap:2,sapGold:10,regrow:0,spr:'ero',noise:.8,leaf:2,minAxe:2,rare:true},
+  // Arbre-Chant (player-planted sacred tree)
+  [TT.ARBRE_CHANT]:{name:'Arbre-Chant',hp:25,wood:20,gold:50,sap:10,sapGold:100,regrow:0,spr:'achant',noise:1,leaf:3,minAxe:1,sacred:true},
 };
 let map=[],corr=[],corrT=[],corrSrc=[],ents=[],parts=[],fts=[],amb=[],canopyP=[];
 let wildlife=[]; // passive fauna
@@ -351,10 +375,50 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _enteredBoreal:false,
   _enteredMarecage:false,
   _mapMarecage:false,
-  _mapBoreal:false,       // 'protect','cut','purify'
+  _mapBoreal:false,
+  // === NEW SYSTEMS ===
+  // Spiritual essences (drop from corrupted mobs)
+  essences:0,
+  // Seeds & Replanting
+  seeds:0,              // regular seeds from Jardinier
+  seedType:null,        // current seed essence type to plant
+  _seedsPlanted:0,      // total seeds planted
+  _hasArbreChantSeed:false, // obtained the unique Arbre-Chant seed
+  _arbreChantPlanted:false, // planted the Arbre-Chant
+  _arbreChantPos:null,  // {x,y} position of planted Arbre-Chant
+  _arbreChantCut:false,  // cut the Arbre-Chant for luthier
+  // Hermit quest states
+  _estelleMet:false,
+  _estelleTraining:0,   // training level (unlocks skills)
+  _hasSkillDash:false,   // already exists via C, but upgraded version
+  _hasSkillCircular:false,
+  _hasSkillDashAttack:false,
+  _hasSkillCounter:false,
+  _jardinierMet:false,
+  _jardinierQuestActive:false,
+  _jardinierQuestDone:false,
+  _tristeMet:false,
+  _tristeLiberated:false,
+  // Legendary Axe quest
+  _brokenAxeFound:false,
+  _brokenAxeItem:false,  // in inventory
+  _forgeronRejected:false,
+  _legendaryAxeRestored:false,
+  _hasLegendaryAxe:false,
+  // Luthier instrument system
+  _luthierArrived:false,
+  _instruments:[],       // collected instruments [{name,wood}]
+  _luthierFinalQuest:false,
+  _luthierMasterpiece:false, // has the sacred instrument
+  // Purification zones tracked
+  _zonesRestored:0,
+  // Combat upgrades from Estelle
+  _staminaBonus:0,
+  _lastSwingT:0,       // timestamp of last swing (for circular double-tap)
+  _counterWindow:0,    // counter-attack active window timer
 };
 const RES_WEIGHT={wood:1,sap:1};
-function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap}
+function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap+(P.seeds||0)*TUNING.seedBagWeight+(P._instruments||[]).length*TUNING.instrumentBagWeight+(P._brokenAxeItem?3:0)}
 function invFree(){return P.invCap-invUsed()}
 let cam={x:0,y:0},smCam={x:0,y:0};
 const K={};
@@ -534,7 +598,7 @@ const PAL={
 };
 
 // Sprite size categories: s=small(72x104), m=medium(96x128), l=large(128x160), j=sacred
-const SPRITE_CAT={noi:'s',aul:'s',bou:'s',era:'m',pin:'m',fre:'m',che:'l',het:'l',ifs:'l',til:'l',seq:'j',pet:'l',tj:'j',prim:'j',ebe:'l',pal:'l',bdr:'m',cyp:'m',man:'m',epi:'m',mel:'m',sapb:'m',bpb:'s',ero:'m'};
+const SPRITE_CAT={noi:'s',aul:'s',bou:'s',era:'m',pin:'m',fre:'m',che:'l',het:'l',ifs:'l',til:'l',seq:'j',pet:'l',tj:'j',prim:'j',ebe:'l',pal:'l',bdr:'m',cyp:'m',man:'m',epi:'m',mel:'m',sapb:'m',bpb:'s',ero:'m',achant:'j'};
 
 // ============ DAY/NIGHT SYSTEM ============
 // dayPhase: 0=midnight, ~0.5=noon — SUMMER: long days, short nights
@@ -2053,10 +2117,35 @@ const NPC_DATA = {
     visited: false,
   },
   [TT.LUTH]: {
-    name: 'Estelle',
+    name: 'Le Luthier',
     title: '\ud83c\udfbb Luthier',
     borderCol: '#d4a017',
     visited: false,
+  },
+  [TT.HERM_E]: {
+    name: 'Estelle',
+    title: '⚔️ Ermite Combattante',
+    borderCol: '#cc4444',
+    visited: false,
+  },
+  [TT.HERM_J]: {
+    name: 'Le Jardinier',
+    title: '🌱 Ermite Jardinier',
+    borderCol: '#52b788',
+    visited: false,
+  },
+  [TT.HERM_T]: {
+    name: 'L\'Ancien',
+    title: '🎵 Ermite Triste',
+    borderCol: '#6a6a8a',
+    visited: false,
+  },
+  [TT.BROKEN_AXE]: {
+    name: 'Hache Brisée',
+    title: '⚔️ Relique',
+    borderCol: '#d4a574',
+    visited: false,
+    noDialogue: true,
   },
 };
 
@@ -2323,6 +2412,135 @@ function drawLuthier(c){
   // Wood shavings on apron
   c.fillStyle='#d4b060';c.fillRect(32,58,3,2);c.fillRect(38,62,4,1);c.fillRect(44,56,2,3);
 }
+function drawEstellePortrait(c){
+  // Dark red combat-themed bg
+  c.fillStyle='#1a0808';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,35,8,40,40,50);
+  gr.addColorStop(0,'rgba(200,60,40,0.12)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Body - leather armor
+  c.fillStyle='#5a2a1a';c.fillRect(20,44,40,36);
+  c.fillStyle='#7a3a1a';c.fillRect(24,48,32,32);
+  // Shoulder guards
+  c.fillStyle='#8a4a2a';c.fillRect(16,44,10,8);c.fillRect(54,44,10,8);
+  c.fillStyle='#a05a30';c.fillRect(18,45,6,6);c.fillRect(56,45,6,6);
+  // Neck
+  c.fillStyle='#c8956a';c.fillRect(34,38,12,8);
+  // Head
+  c.fillStyle='#d4a070';c.fillRect(28,12,24,28);
+  // Short red-brown hair, wild
+  c.fillStyle='#8a2a10';c.fillRect(26,8,28,10);
+  c.fillRect(24,12,4,10);c.fillRect(52,12,4,10);
+  // Stray hair strands
+  c.fillStyle='#a03818';c.fillRect(24,8,4,4);c.fillRect(52,6,4,6);c.fillRect(42,6,3,4);
+  // Eyes - fierce, amber
+  c.fillStyle='#fff';c.fillRect(30,20,6,5);c.fillRect(44,20,6,5);
+  c.fillStyle='#cc6622';c.fillRect(32,20,4,5);c.fillRect(46,20,4,5);
+  c.fillStyle='#111';c.fillRect(33,21,2,3);c.fillRect(47,21,2,3);
+  // Eyebrows (sharp, angled)
+  c.fillStyle='#5a1a08';c.fillRect(29,18,8,2);c.fillRect(43,18,8,2);
+  // Nose
+  c.fillStyle='#c08060';c.fillRect(38,24,4,8);
+  // Scar across left cheek
+  c.fillStyle='#b87858';c.fillRect(26,26,4,1);c.fillRect(28,27,3,1);c.fillRect(30,28,3,1);
+  // Mouth (determined grin)
+  c.fillStyle='#a06040';c.fillRect(35,34,10,2);c.fillStyle='#b87050';c.fillRect(36,34,8,1);
+  // Ears
+  c.fillStyle='#c89060';c.fillRect(24,22,4,8);c.fillRect(52,22,4,8);
+  // Sword behind back
+  c.fillStyle='#888';c.fillRect(60,4,3,50);c.fillStyle='#aaa';c.fillRect(61,4,1,48);
+  c.fillStyle='#5a3a1a';c.fillRect(59,52,5,8);
+  c.fillStyle='#cc9944';c.fillRect(58,51,7,2);
+}
+function drawJardinierPortrait(c){
+  // Lush green bg
+  c.fillStyle='#0a1a08';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,35,10,40,40,50);
+  gr.addColorStop(0,'rgba(82,183,136,0.15)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Leaves/vines bg
+  c.fillStyle='#1a4a2a';
+  for(let i=0;i<5;i++){c.fillRect(i*16+2,0,3,80);c.fillRect(0,i*16+4,80,2)}
+  // Small flowers in bg
+  c.fillStyle='#ff88aa';c.fillRect(8,12,3,3);c.fillRect(62,8,3,3);c.fillRect(14,68,3,3);
+  c.fillStyle='#ffdd44';c.fillRect(68,52,3,3);c.fillRect(20,28,2,2);
+  // Body - earthy robes
+  c.fillStyle='#4a6a3a';c.fillRect(20,46,40,34);
+  c.fillStyle='#5a7a4a';c.fillRect(24,50,32,30);
+  // Vine belt
+  c.fillStyle='#3a5a2a';c.fillRect(22,54,36,3);
+  c.fillStyle='#52b788';c.fillRect(24,54,4,3);c.fillRect(36,54,4,3);c.fillRect(48,54,4,3);
+  // Neck
+  c.fillStyle='#b8946a';c.fillRect(34,40,12,8);
+  // Head - older, weathered
+  c.fillStyle='#c49868';c.fillRect(28,12,24,30);
+  // Straw hat
+  c.fillStyle='#c8a860';c.fillRect(20,6,40,10);c.fillRect(24,4,32,4);
+  c.fillStyle='#b89850';c.fillRect(22,8,36,2);
+  // Eyes - warm, kind
+  c.fillStyle='#fff';c.fillRect(32,22,5,4);c.fillRect(44,22,5,4);
+  c.fillStyle='#4a8a3a';c.fillRect(33,22,3,4);c.fillRect(45,22,3,4);
+  c.fillStyle='#111';c.fillRect(34,23,2,2);c.fillRect(46,23,2,2);
+  // Crow's feet
+  c.fillStyle='#a07848';c.fillRect(30,24,2,1);c.fillRect(49,24,2,1);
+  // Big friendly nose
+  c.fillStyle='#b88050';c.fillRect(38,24,4,10);c.fillStyle='#a87040';c.fillRect(37,32,6,2);
+  // Warm smile
+  c.fillStyle='#a06040';c.fillRect(35,36,10,2);c.fillStyle='#c07050';c.fillRect(36,36,8,1);
+  // White beard (short, neat)
+  c.fillStyle='#d0d0c8';c.fillRect(30,38,20,6);c.fillRect(34,44,12,3);
+  // Ears
+  c.fillStyle='#b88858';c.fillRect(24,22,4,8);c.fillRect(52,22,4,8);
+  // Trowel in hand
+  c.fillStyle='#888';c.fillRect(62,40,3,20);
+  c.fillStyle='#aaa';c.fillRect(60,38,7,4);
+  // Seedling on shoulder
+  c.fillStyle='#52b788';c.fillRect(18,42,4,6);c.fillStyle='#3a8a5a';c.fillRect(17,40,6,3);
+}
+function drawTristePortrait(c){
+  // Melancholic blue-grey bg
+  c.fillStyle='#0a0a14';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,35,8,40,40,50);
+  gr.addColorStop(0,'rgba(100,100,140,0.12)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Faint music notes in bg
+  c.fillStyle='rgba(120,120,160,0.15)';
+  c.fillRect(10,14,3,6);c.fillRect(13,12,2,2);
+  c.fillRect(62,22,3,6);c.fillRect(65,20,2,2);
+  c.fillRect(8,56,3,6);c.fillRect(11,54,2,2);
+  // Body - faded dark robes
+  c.fillStyle='#2a2a3a';c.fillRect(20,46,40,34);
+  c.fillStyle='#3a3a4a';c.fillRect(24,50,32,30);
+  // Tattered edges
+  c.fillStyle='#222238';
+  c.fillRect(20,74,3,6);c.fillRect(28,76,2,4);c.fillRect(50,74,3,6);c.fillRect(56,76,2,4);
+  // Deep hood
+  c.fillStyle='#2a2a3a';c.fillRect(22,8,36,38);
+  c.fillStyle='#1a1a2a';c.fillRect(26,6,28,8);
+  c.fillRect(20,12,4,20);c.fillRect(56,12,4,20);
+  // Face in deep shadow
+  c.fillStyle='#a08868';c.fillRect(30,18,20,20);
+  // Eyes - deep sadness, blue-grey
+  c.fillStyle='#0a0a14';c.fillRect(33,24,5,5);c.fillRect(43,24,5,5);
+  c.fillStyle='#6a6a9a';c.fillRect(34,25,3,3);c.fillRect(44,25,3,3);
+  c.fillStyle='#9a9aca';c.fillRect(35,26,1,1);c.fillRect(45,26,1,1);
+  // Dark circles under eyes
+  c.fillStyle='rgba(40,30,50,0.4)';c.fillRect(33,29,5,2);c.fillRect(43,29,5,2);
+  // Gaunt cheeks
+  c.fillStyle='#907858';c.fillRect(30,30,4,4);c.fillRect(46,30,4,4);
+  // Thin mouth, downturned
+  c.fillStyle='#806050';c.fillRect(36,34,8,1);
+  c.fillStyle='#705040';c.fillRect(35,35,2,1);c.fillRect(43,35,2,1);
+  // Long grey beard
+  c.fillStyle='#8a8a88';c.fillRect(34,36,12,8);c.fillRect(36,44,8,6);c.fillRect(38,50,4,4);
+  c.fillStyle='#7a7a78';c.fillRect(35,38,10,4);
+  // Gnarled hands clasped
+  c.fillStyle='#a08060';c.fillRect(34,70,12,6);c.fillRect(36,68,8,4);
+  // Small old lyre at side
+  c.fillStyle='#6a5a3a';c.fillRect(60,46,10,18);
+  c.fillStyle='#8a7a5a';c.fillRect(62,44,6,4);c.fillRect(62,44,2,20);c.fillRect(68,44,2,20);
+  c.fillStyle='#c0b080';c.fillRect(64,48,1,12);c.fillRect(66,48,1,12);
+}
 function drawPortrait(npcType, canvas){
   const c = canvas.getContext('2d');
   c.imageSmoothingEnabled = false;
@@ -2337,6 +2555,9 @@ function drawPortrait(npcType, canvas){
   else if(npcType === TT.ANTHRO) drawAnthro(c);
   else if(npcType === TT.HERM) drawHermit(c);
   else if(npcType === TT.LUTH) drawLuthier(c);
+  else if(npcType === TT.HERM_E) drawEstellePortrait(c);
+  else if(npcType === TT.HERM_J) drawJardinierPortrait(c);
+  else if(npcType === TT.HERM_T) drawTristePortrait(c);
   
   // Border glow
   const nd = NPC_DATA[npcType];
@@ -2558,6 +2779,17 @@ function getDialogue(npcType){
   const lines = [];
   
   if(npcType === TT.FORGE){
+    // Broken axe rejection
+    if(P._brokenAxeItem&&!P._forgeronRejected){
+      P._forgeronRejected=true;
+      lines.push("*examine la hache brisée*");
+      lines.push("... Attends. C'est pas du métal, ça.");
+      lines.push("Cette lame... on dirait du bois. Mais dur comme du titane.");
+      lines.push("C'est du bois-titane. J'en ai entendu parler, mais jamais vu.");
+      lines.push("J'y peux rien. Je travaille le métal, pas le bois.");
+      lines.push("Cherche quelqu'un qui connaît les matériaux anciens. Un ermite, peut-être.");
+      return lines;
+    }
     if(first){
       lines.push("Ah te voilà. L'Émissaire t'a recruté aussi, hein ?");
       lines.push("Fais gaffe avec ces gens-là. Enfin... viens me voir si tu veux du bon acier.");
@@ -2705,26 +2937,112 @@ function getDialogue(npcType){
     }
   }else if(npcType === TT.LUTH){
     const v=NPC_VISITS[TT.LUTH]||0;
-    const rareWoods=['\u00c9b\u00e8ne','Palissandre','Bois de Rose','\u00c9pic\u00e9a de r\u00e9sonance','\u00c9rable ond\u00e9'];
-    const rareCount=(P.woodByType||{});
-    const hasRare=Object.keys(rareCount).some(k=>{
-      const ess2=ESS[parseInt(k)];return ess2&&ess2.rare});
+    const hasRare=Object.keys(P.woodByType||{}).some(k=>{const ess2=ESS[parseInt(k)];return ess2&&ess2.rare});
     if(v===0){
-      lines.push("Oh ! Un visiteur... Estelle, luthier. Je me suis install\u00e9e ici, loin du bruit.");
-      lines.push("Je fabrique des instruments de musique \u2014 violons, guitares, luths...");
-      lines.push("La for\u00eat me donne tout ce qu'il faut. Mais j'ai besoin de bois sp\u00e9ciaux, rares.");
-      lines.push("\u00c9b\u00e8ne, Palissandre, Bois de Rose dans le mar\u00e9cage \u00e0 l'est...");
-      lines.push("\u00c9pic\u00e9a de r\u00e9sonance dans les for\u00eats bor\u00e9ales \u00e0 l'ouest...");
-      lines.push("Et le mythique \u00c9rable ond\u00e9, cach\u00e9 dans la for\u00eat mixte.");
-      lines.push("Rapportez-m'en, et je vous paierai tr\u00e8s g\u00e9n\u00e9reusement.");
+      lines.push("Ah, quelqu'un ! Je suis le luthier. Je voyage de forêt en forêt.");
+      lines.push("Je fabrique des instruments — violons, guitares, luths...");
+      lines.push("Mon ancien maître m'a tout appris. Il vit quelque part... dans les profondeurs.");
+      lines.push("Ébène, Palissandre, Bois de Rose dans le marécage à l'est...");
+      lines.push("Épicéa de résonance dans les forêts boréales à l'ouest...");
+      lines.push("Érable ondé dans la forêt mixte.");
+      lines.push("Rapportez-moi ces bois, et j'en ferai des merveilles.");
+    }else if(P._luthierFinalQuest&&!P._luthierMasterpiece){
+      lines.push("Mon chef-d'œuvre... il ne me manque qu'une chose.");
+      lines.push("Le bois de l'Arbre-Chant. Un arbre sacré unique, dit-on.");
+      lines.push("Plantez-le, laissez-le grandir, puis... coupez-le. Pour la musique.");
+    }else if(P._luthierMasterpiece){
+      lines.push("L'instrument est terminé. Un chef-d'œuvre absolu.");
+      lines.push("Mon maître... il saurait l'apprécier. Si seulement il pouvait l'entendre...");
+      lines.push("On dit qu'un vieil ermite vit dans la forêt primordiale...");
     }else{
       if(hasRare){
-        lines.push("Vous avez du bois rare ! Montrez-moi \u00e7a...");
-        lines.push("Chaque essence a sa sonorit\u00e9. L'\u00e9b\u00e8ne chante, le palissandre ronronne.");
+        lines.push("Du bois rare ! Montrez-moi ça...");
+        lines.push("Chaque essence a sa sonorité. L'ébène chante, le palissandre ronronne.");
       }else{
-        const pool2=["Le bois parle \u00e0 qui sait \u00e9couter.","Un bon instrument commence par un bon arbre.","Le mar\u00e9cage cache des tr\u00e9sors noirs. Le bor\u00e9al, des \u00e9pic\u00e9as qui vibrent.","L'\u00e9rable ond\u00e9... ses veines dessinent de la musique."];
+        const pool2=["Le bois parle à qui sait écouter.","Un bon instrument commence par un bon arbre.","Le marécage cache des trésors noirs.","L'érable ondé... ses veines dessinent de la musique."];
         lines.push(pool2[v%pool2.length]);
       }
+    }
+  }else if(npcType === TT.HERM_E){
+    // Estelle — Combat Hermit
+    const v=NPC_VISITS[TT.HERM_E]||0;
+    if(v===0){
+      P._estelleMet=true;
+      lines.push("...");
+      lines.push("Tu as du courage pour venir jusque-là. Estelle. Ancienne guerrière.");
+      lines.push("La forêt est dangereuse. Les ombres rôdent, les loups chassent.");
+      lines.push("Je peux t'entraîner. Te rendre plus fort, plus rapide.");
+      lines.push("Reviens me voir quand tu seras prêt.");
+    }else{
+      const t=P._estelleTraining||0;
+      if(t===0) lines.push("Prêt pour l'entraînement ? Ça va faire mal.");
+      else if(t===1) lines.push("Tu progresses. L'attaque circulaire — fauche tout autour de toi.");
+      else if(t===2) lines.push("L'attaque dashée — frappe en mouvement. Mortelle.");
+      else if(t>=3) lines.push("La contre-attaque. Attend que l'ennemi saute, puis frappe. Timing parfait.");
+    }
+  }else if(npcType === TT.HERM_J){
+    // Ermite Jardinier
+    const v=NPC_VISITS[TT.HERM_J]||0;
+    if(v===0){
+      P._jardinierMet=true;
+      lines.push("Ha ha ! Un visiteur ! Bienvenue dans mon jardin !");
+      lines.push("*gesticule frénétiquement parmi les plantes*");
+      lines.push("Je suis le Jardinier. Le Fou des Graines, comme ils m'appellent.");
+      lines.push("L'ancien héros a planté les arbres sacrés, tu sais ? PLANTÉ !");
+      lines.push("La forêt meurt parce que plus personne ne plante. On coupe, coupe, coupe...");
+      lines.push("Je vais te donner des graines. Beaucoup de graines. PLANTE-LES !");
+    }else if(P._jardinierQuestActive&&!P._jardinierQuestDone){
+      const planted=P._seedsPlanted||0;
+      const needed=TUNING.jardinierSeedCount;
+      if(planted>=needed){
+        lines.push("TU LES AS TOUTES PLANTÉES ! *danse de joie*");
+        lines.push("La forêt va renaître ! Les racines vont chanter !");
+        lines.push("J'ai un dernier cadeau pour toi. LA graine. L'unique.");
+        lines.push("L'Arbre-Chant. Une espèce qui n'existe nulle part ailleurs.");
+        lines.push("Plante-la sur sol sain. Elle deviendra quelque chose... de magnifique.");
+      }else{
+        lines.push(`Graines plantées : ${planted}/${needed}. Continue !`);
+        lines.push("Chaque graine est une promesse. Chaque arbre, un miracle.");
+        if(P.herbs>0||P.mushrooms>0)lines.push("Des herbes ? Des champignons ? Je les échange contre des graines d'espèces rares !");
+      }
+    }else if(P._jardinierQuestDone){
+      lines.push("L'Arbre-Chant... tu l'as planté ? Il chante déjà ?");
+      lines.push("La forêt se souvient de ceux qui sèment. N'oublie jamais.");
+    }else{
+      lines.push("Reviens me voir si tu veux des graines !");
+    }
+  }else if(npcType === TT.HERM_T){
+    // Ermite Triste
+    const v=NPC_VISITS[TT.HERM_T]||0;
+    P._tristeMet=true;
+    if(v===0){
+      lines.push("...");
+      lines.push("*silence prolongé*");
+      lines.push("Va-t'en.");
+      lines.push("... Non. Reste. Ça fait longtemps que personne...");
+      lines.push("J'étais luthier. Le meilleur. Avant.");
+      lines.push("J'ai essayé de fabriquer un instrument en bois sacré. J'ai échoué. J'ai tout brisé.");
+    }else if(P._brokenAxeItem&&!P._tristeLiberated){
+      lines.push("*regarde la hache brisée*");
+      lines.push("... Je connais cette hache. La Hache Légendaire.");
+      lines.push("La lame est en bois-titane. Pas du métal. Du BOIS aussi dur que le titane.");
+      lines.push("J'ai un morceau de bois-titane. Le seul qui reste au monde.");
+      lines.push("Je pourrais la réparer. Mais... je n'ai plus la volonté.");
+      lines.push("Je veux entendre quelque chose de beau. Quelque chose qui me rappelle pourquoi...");
+    }else if(P._luthierMasterpiece&&!P._tristeLiberated){
+      lines.push("*entend l'instrument*");
+      lines.push("... Ce son. Ce style. C'est...");
+      lines.push("Mon élève. Il a réussi là où j'ai échoué.");
+      lines.push("*larmes silencieuses*");
+      lines.push("Mon héritage n'est pas mort. Mes enseignements ont porté fruit.");
+      lines.push("Donne-moi la hache. Je vais la restaurer. Avec mon bois-titane.");
+    }else if(P._tristeLiberated){
+      lines.push("*sourire fragile*");
+      lines.push("La Hache Légendaire est restaurée. Prends-la.");
+      lines.push("Le bois-titane chante quand tu coupes. Écoute-le.");
+    }else{
+      const pool3=["Le silence est mon seul compagnon.","J'ai passé des années à chercher le bois parfait. J'ai trouvé le vide.","Mon élève... je me demande s'il fabrique toujours.","Le bois-titane. Un rêve pétrifié."];
+      lines.push(pool3[v%pool3.length]);
     }
   }
   
@@ -3150,29 +3468,66 @@ function genMap(){
     }
   }
 
-    // === HERMIT HUTS: One per deep biome ===
+    // === THREE DISTINCT HERMITS ===
   const hermitPositions = [];
-  const placeHermit=(yMin,yMax,seedOff)=>{
-    const hx=Math.floor(15+n2(seedOff,50,seed+950)*96);
-    const hy=Math.floor(yMin+8+n2(seedOff,51,seed+951)*(yMax-yMin-16));
-    // Clear small area for hut
-    for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
-      const nx=hx+dx,ny=hy+dy;
-      if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
-        if(dx===0&&dy===0) map[ny][nx]=TT.HERM; // Hermit hut
-        else map[ny][nx]=TT.G;
-      }
+  // Estelle (Combat Hermit) — Forêt Mixte / Tempéré
+  const estelleX=Math.floor(15+n2(0,50,seed+950)*96);
+  const estelleY=Math.floor(B_ANC+8+n2(0,51,seed+951)*(B_MIX-B_ANC-16));
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const nx=estelleX+dx,ny=estelleY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.HERM_E;
+      else map[ny][nx]=TT.G;
     }
-    hermitPositions.push({x:hx,y:hy,biome:yMin<B_PRIM?3:yMin<B_ANC?2:1});
-  };
-  placeHermit(B_ANC,B_MIX,0);   // Forêt Mixte hermit
-  // Lateral biome hermits
+  }
+  hermitPositions.push({x:estelleX,y:estelleY,type:'estelle'});
+  window._estellePos={x:estelleX,y:estelleY};
+
+  // Ermite Jardinier — Forêt Ancienne (near a clearing with garden)
+  const jardinX=Math.floor(15+n2(10,50,seed+952)*96);
+  const jardinY=Math.floor(B_PRIM+8+n2(10,51,seed+953)*(B_ANC-B_PRIM-16));
+  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+    const nx=jardinX+dx,ny=jardinY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.HERM_J;
+      else if(Math.abs(dx)<=1&&Math.abs(dy)<=1) map[ny][nx]=TT.G;
+      else if(Math.random()>.5) map[ny][nx]=TT.FL; // garden flowers
+      else map[ny][nx]=TT.G;
+    }
+  }
+  hermitPositions.push({x:jardinX,y:jardinY,type:'jardinier'});
+  window._jardinierPos={x:jardinX,y:jardinY};
+
+  // Ermite Triste — Forêt Primordiale (deep forest, recluse)
+  const tristeX=Math.floor(15+n2(20,50,seed+954)*96);
+  const tristeY=Math.floor(4+n2(20,51,seed+955)*(B_PRIM-8));
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const nx=tristeX+dx,ny=tristeY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.HERM_T;
+      else map[ny][nx]=TT.G;
+    }
+  }
+  hermitPositions.push({x:tristeX,y:tristeY,type:'triste'});
+  window._tristePos={x:tristeX,y:tristeY};
+
+  // Lateral biome hermits (keep as generic HERM for additional encounters)
   const hEX=Math.floor(180+n2(40,50,seed+955)*60),hEY=Math.floor(40+n2(40,51,seed+956)*120);
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=hEX+dx,ny=hEY+dy;if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){if(dx===0&&dy===0)map[ny][nx]=TT.HERM;else map[ny][nx]=TT.G}}
   const hWX=Math.floor(10+n2(41,50,seed+957)*60),hWY=Math.floor(40+n2(41,51,seed+958)*120);
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=hWX+dx,ny=hWY+dy;if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){if(dx===0&&dy===0)map[ny][nx]=TT.HERM;else map[ny][nx]=TT.G}}
-  placeHermit(B_PRIM,B_ANC,10); // Forêt Ancienne hermit
-  placeHermit(0,B_PRIM,20);     // Forêt Primordiale hermit
+
+  // === BROKEN LEGENDARY AXE — hidden in Forêt Ancienne ===
+  const brAxeX=Math.floor(30+n2(99,50,seed+980)*60);
+  const brAxeY=Math.floor(B_PRIM+15+n2(99,51,seed+981)*(B_ANC-B_PRIM-30));
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const nx=brAxeX+dx,ny=brAxeY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.BROKEN_AXE;
+      else map[ny][nx]=TT.G;
+    }
+  }
+  window._brokenAxePos={x:brAxeX,y:brAxeY};
 
   corrSrc=Array.from({length:MH},()=>Array(MW).fill(false));
   _corrSources=[];
@@ -3199,9 +3554,9 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
-function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)}
+function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE}
 
 // Flood-fill to find contiguous stump cluster (8-connected)
 function findStumpCluster(sx,sy){
@@ -3249,6 +3604,56 @@ function checkCorrTrigger(tx,ty){
   }
 }
 
+// ============ SACRED MINI-BOSS UPDATE ============
+function updSacredMiniBosses(d){
+  for(let i=sacredMiniBosses.length-1;i>=0;i--){
+    const b=sacredMiniBosses[i];
+    if(b.defeated){sacredMiniBosses.splice(i,1);continue}
+    b.ht=Math.max(0,b.ht-d);
+    b.roar=Math.max(0,b.roar-d);
+    if(b.roar>0)continue;
+    const dx=P.x-b.x,dy=P.y-b.y,dist=Math.sqrt(dx*dx+dy*dy);
+    // Chase player
+    if(dist<12&&dist>1){b.x+=(dx/dist)*b.spd*d;b.y+=(dy/dist)*b.spd*d}
+    // Attack
+    b.at-=d;
+    if(dist<1.5&&P.iv<=0&&b.at<=0){
+      b.at=1.2;
+      hurtP(b.dmg,1,.3,.6,'#daa520',8,b);
+    }
+  }
+}
+// Hit detection for sacred mini-bosses (called from combat section)
+function hitSacredMiniBoss(px2,py2,pow){
+  sacredMiniBosses.forEach(b=>{
+    if(b.defeated)return;
+    const dx=b.x-px2,dy=b.y-py2;
+    if(Math.sqrt(dx*dx+dy*dy)<1.5){
+      b.hp-=pow;b.ht=.2;shake=.2;
+      sp(b.x,b.y,'#daa520',6);ft2(b.x,b.y-1,'-'+pow,'#daa520');
+      if(b.hp<=0){
+        b.defeated=true;
+        ft2(b.x,b.y-2,b.name+' VAINCU !','#ffd700');
+        sp(b.x,b.y,'#ffd700',20);shake=1;
+        // Drop spiritual essences
+        P.essences=(P.essences||0)+3;
+        ft2(b.x,b.y-1,'✨+3 Essences spirituelles','#b266ff');
+        P.g+=30;ft2(b.x,b.y,'💰+30','#ffd700');
+      }
+    }
+  });
+}
+
+// Luthier dynamic arrival check
+function checkLuthierArrival(tileType){
+  if(P._luthierArrived)return;
+  const ess=ESS[tileType];
+  if(ess&&ess.rare){
+    P._luthierArrived=true;
+    ft2(P.x,P.y-1.5,'🎻 Un luthier s\'est installé au village!','#d4a017');
+  }
+}
+
 // ============ REGROWTH SYSTEM ============
 let _rgT=0;
 function updRegrow(d){
@@ -3273,6 +3678,44 @@ function updRegrow(d){
   }
 }
 
+// ============ SACRED TREE AURA SYSTEM ============
+// Returns true if position (tx,ty) is within a sacred tree's aura
+let _sacredAuraCache=null; // cached set of protected tiles, rebuilt when sacred trees change
+let _sacredAuraDirty=true;
+function rebuildSacredAura(){
+  _sacredAuraCache=new Set();
+  const r=TUNING.sacredAuraRadius;
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    const t=map[y][x];
+    if(t===TT.TJ||t===TT.ARBRE_CHANT){
+      for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+        const nx=x+dx,ny=y+dy;
+        if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+        if(Math.sqrt(dx*dx+dy*dy)<=r) _sacredAuraCache.add(ny*MW+nx);
+      }
+    }
+  }
+  _sacredAuraDirty=false;
+}
+function inSacredAura(tx,ty){
+  if(_sacredAuraDirty||!_sacredAuraCache) rebuildSacredAura();
+  return _sacredAuraCache.has(ty*MW+tx);
+}
+
+// Sacred tree mini-boss spawner
+let sacredMiniBosses=[];
+function spawnSacredMiniBoss(tx,ty,biome){
+  const names=['Esprit du Bosquet','Gardien des Racines','Sentinelle Ancienne','Veilleur Primordial'];
+  const name=names[Math.min(biome,names.length-1)];
+  sacredMiniBosses.push({
+    x:tx+1,y:ty+1,hp:TUNING.sacredMiniBossHp,mhp:TUNING.sacredMiniBossHp,
+    spd:1.2,dmg:TUNING.sacredMiniBossDmg,ht:0,at:0,name,
+    biome,defeated:false,roar:1.5
+  });
+  ft2(tx,ty-2,name+' S\'ÉVEILLE !','#daa520');
+  shake=1.5;sp(tx,ty,'#daa520',20);
+}
+
 // ============ CORRUPTION / ENTITIES / PARTICLES / PLAYER / SHOP ============
 // Corruption only spreads from marked source tiles (contiguous clear-cuts)
 let _corrSources=[]; // list of [x,y] source positions for fast iteration
@@ -3282,9 +3725,13 @@ function updCorr(d){
   const sr=TUNING.corrSpreadRadius;
   // Only iterate known sources
   _corrSources.forEach(([x,y])=>{
+    // Skip tiles protected by sacred aura
+    if(inSacredAura(x,y))return;
     for(let dy=-Math.ceil(sr);dy<=Math.ceil(sr);dy++)for(let dx=-Math.ceil(sr);dx<=Math.ceil(sr);dx++){
       const nx=x+dx,ny=y+dy;
       if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+      // Skip tiles in sacred aura
+      if(inSacredAura(nx,ny))continue;
       const di=Math.sqrt(dx*dx+dy*dy);
       if(di>sr)continue;
       if(corr[ny][nx]<1){
@@ -3319,10 +3766,21 @@ function spawnE(){
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
-function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
+function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
-function hurtP(dmg,iv,ht,shk,col,n){P.hp-=dmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}}
+function hurtP(dmg,iv,ht,shk,col,n,attacker){
+  // Counter-attack: if player has skill and is in counter window, reflect damage
+  if(P._hasSkillCounter&&(P._counterWindow||0)>0&&attacker){
+    const cDmg=Math.ceil(dmg*2);
+    attacker.hp-=cDmg;attacker.ht=.4;
+    P._counterWindow=0;P.iv=.3;
+    shake=.4;sp(P.x,P.y,'#ffd700',10);sp(attacker.x||P.x,attacker.y||P.y,'#ff4444',8);
+    ft2(P.x,P.y-1,'🛡️ Contre!','#ffd700');sfxHit();
+    return;
+  }
+  P.hp-=dmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+}
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
   for(let i=fts.length-1;i>=0;i--){fts[i].y-=d*1.5;fts[i].l-=d;if(fts[i].l<=0)fts.splice(i,1)}
@@ -3642,7 +4100,7 @@ function updWolves(d){
     }
     // Damage player on contact
     if(di<.8&&P.iv<=0){
-      hurtP(w.dmg,.8,.3,.4,'#8888aa',6);
+      hurtP(w.dmg,.8,.3,.4,'#8888aa',6,w);
     }
     // Death
     if(w.hp<=0){
@@ -3696,18 +4154,21 @@ function updP2(d){
       }
     }catch(err){console.error('Plant error:',err)}
   }
-  // R key = perform ritual at sacred tree
+  // R key = perform purification ritual (on corrupted stumps or near sacred trees)
   if(K.KeyR){K.KeyR=false;
-    try{
-      const px2r=Math.floor(P.x),py2r=Math.floor(P.y);
-      let nearSacred=false;
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
-        const nx=px2r+dx,ny=py2r+dy;
-        if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny]&&map[ny][nx]===TT.TJ){nearSacred=true}
-      }
-      if(nearSacred){performRitual()}
-      else{ft2(P.x,P.y,'Approche un arbre sacr\u00e9 (R)','#e9c46a')}
-    }catch(err){console.error('Ritual error:',err)}
+    try{performRitual()}catch(err){console.error('Ritual error:',err)}
+  }
+  // P key = plant seed
+  if(K.KeyP){K.KeyP=false;
+    const ptx2=Math.floor(P.x+[0,1,0,-1][P.f]),pty2=Math.floor(P.y+[-1,0,1,0][P.f]);
+    if(P._hasArbreChantSeed){
+      plantArbreChant(ptx2,pty2);
+    }else if(P.seeds>0){
+      if(canPlantSeed(ptx2,pty2))plantSeed(ptx2,pty2);
+      else ft2(P.x,P.y,'Sol inadapté (corrompu ou occupé)','#e9c46a');
+    }else{
+      ft2(P.x,P.y,'Pas de graines (parle au Jardinier)','#e9c46a');
+    }
   }
     if(K.KeyE){K.KeyE=false;
     // If dialogue is active, advance it
@@ -3724,7 +4185,7 @@ function updP2(d){
       // Check for sacred trees first
       for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
         const nx2=px2+dx,ny2=py2+dy;
-        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.TJ){
+        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&(map[ny2][nx2]===TT.TJ||map[ny2][nx2]===TT.ARBRE_CHANT)){
           const lore=getSacredLore(nx2,ny2);
           if(lore){
             if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
@@ -3784,14 +4245,48 @@ function updP2(d){
   if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);sfxPickup();}
   const staRegen=TUNING.staRegen*(P._encens&&gt<P._encens?2:1);
   P.sta=Math.min(P.msta,P.sta+staRegen*d);P.ct=Math.max(0,P.ct-d);P.iv=Math.max(0,P.iv-d);P.ht=Math.max(0,P.ht-d);P.sw=Math.max(0,P.sw-d*10);
+  P._counterWindow=Math.max(0,(P._counterWindow||0)-d);
   if(K.Space&&P.ct<=0&&P.sta>TUNING.cutStaCost){
+    // --- Circular attack (double-tap Space quickly) ---
+    const isCircular=P._hasSkillCircular&&(gt-(P._lastSwingT||0))<0.4;
+    // --- Dash attack (C held + Space) ---
+    const isDashAttack=P._hasSkillDashAttack&&K.KeyC&&(mx||my);
+    P._lastSwingT=gt;
     P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;sfxChop();
+    // Counter-attack window
+    if(P._hasSkillCounter) P._counterWindow=0.3;
     // Scare wildlife on cut
     wildlife.forEach(w=>{const dx2=w.x-P.x,dy2=w.y-P.y;if(Math.sqrt(dx2*dx2+dy2*dy2)<TUNING.wildlifeNoiseFleeRadius){w.fleeing=true;w.fleeT=3+Math.random()*2;w.fleeX=w.x+(dx2>0?1:-1)*(8+Math.random()*6);w.fleeY=w.y+(dy2>0?1:-1)*(8+Math.random()*6)}});
     const dirs=[[0,-1],[1,0],[0,1],[-1,0]],dd=dirs[P.f];
     const tx=Math.floor(P.x+dd[0]),ty=Math.floor(P.y+dd[1]);
-    ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5);sfxHit()}});
-    wolves.forEach(w=>{const wx2=w.x-(P.x+dd[0]*.5),wy2=w.y-(P.y+dd[1]*.5);if(Math.sqrt(wx2*wx2+wy2*wy2)<1.5){w.hp-=P.pow;w.ht=.2;shake=.15;sp(w.x,w.y,'#aaaacc',5)}});
+    if(isCircular){
+      // CIRCULAR ATTACK: hit all enemies in 2.5 tile radius, costs extra stamina
+      P.sta-=15;shake=.3;sp(P.x,P.y,'#cc4444',12);ft2(P.x,P.y-1,'⚔️ Circulaire!','#cc4444');
+      const cR=2.5,cPow=Math.ceil(P.pow*1.5);
+      ents.forEach(e=>{const di=Math.sqrt((e.x-P.x)**2+(e.y-P.y)**2);if(di<cR){e.hp-=cPow;e.ht=.3;sp(e.x,e.y,'#ff4444',6);sfxHit()}});
+      wolves.forEach(w=>{const di=Math.sqrt((w.x-P.x)**2+(w.y-P.y)**2);if(di<cR){w.hp-=cPow;w.ht=.3;sp(w.x,w.y,'#ff4444',6)}});
+      hitSacredMiniBoss(P.x,P.y,cPow);
+    }else if(isDashAttack){
+      // DASH ATTACK: lunge forward 3 tiles, hit everything in path
+      P.sta-=20;const daPow=Math.ceil(P.pow*1.2);
+      const ddx=mx/(Math.abs(mx)+Math.abs(my)),ddy=my/(Math.abs(mx)+Math.abs(my));
+      for(let step=0;step<6;step++){
+        const sx=P.x+ddx*step*0.5,sy=P.y+ddy*step*0.5;
+        sp(sx,sy,'#cc8844',3);
+        ents.forEach(e=>{const di=Math.sqrt((e.x-sx)**2+(e.y-sy)**2);if(di<1){e.hp-=daPow;e.ht=.3;sp(e.x,e.y,'#ffaa44',6);sfxHit()}});
+        wolves.forEach(w=>{const di=Math.sqrt((w.x-sx)**2+(w.y-sy)**2);if(di<1){w.hp-=daPow;w.ht=.3;sp(w.x,w.y,'#ffaa44',6)}});
+      }
+      // Move player forward
+      const fnx=P.x+ddx*3,fny=P.y+ddy*3;
+      if(fnx>=.3&&fnx<MW-.3&&fny>=.3&&fny<MH-.3&&!isS(map[Math.floor(fny)][Math.floor(fnx)])){P.x=fnx;P.y=fny}
+      shake=.25;ft2(P.x,P.y-1,'💨 Dash!','#cc8844');
+    }else{
+      // NORMAL ATTACK: hit in facing direction
+      ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5);sfxHit()}});
+      wolves.forEach(w=>{const wx2=w.x-(P.x+dd[0]*.5),wy2=w.y-(P.y+dd[1]*.5);if(Math.sqrt(wx2*wx2+wy2*wy2)<1.5){w.hp-=P.pow;w.ht=.2;shake=.15;sp(w.x,w.y,'#aaaacc',5)}});
+    }
+    // Sacred mini-boss hit detection
+    hitSacredMiniBoss(P.x+dd[0]*.5,P.y+dd[1]*.5,P.pow);
     // Lateral boss hit detection
     if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100}}}
     if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100}}}
@@ -3852,8 +4347,38 @@ function updP2(d){
           const lost=w-toAdd;
           ft2(tx+.3,ty-.3,toAdd<=0?`🪵${w} perdu!`:`(${lost} perdu)`,'#e74c3c');
         }
+        // === SACRED TREE CONSEQUENCES ===
+        if(ess.sacred){
+          // Cutting a sacred tree: corruption explosion + mini-boss
+          const auraR=TUNING.sacredAuraRadius;
+          for(let dy2=-auraR;dy2<=auraR;dy2++)for(let dx2=-auraR;dx2<=auraR;dx2++){
+            const nx2=tx+dx2,ny2=ty+dy2;
+            if(nx2<0||ny2<0||nx2>=MW||ny2>=MH)continue;
+            if(Math.sqrt(dx2*dx2+dy2*dy2)<=auraR){
+              corr[ny2][nx2]=Math.min(1,corr[ny2][nx2]+0.6*(1-Math.sqrt(dx2*dx2+dy2*dy2)/auraR));
+              if(!corrT[ny2][nx2])corrT[ny2][nx2]=gt;
+              if(!corrSrc[ny2][nx2]&&map[ny2][nx2]===TT.ST){corrSrc[ny2][nx2]=true;_corrSources.push([nx2,ny2])}
+            }
+          }
+          // Spawn sacred guardian mini-boss
+          const biome=ty<40?3:ty<100?2:ty<170?1:0;
+          spawnSacredMiniBoss(tx,ty,biome);
+          ft2(tx+.5,ty-2,'💀 CORRUPTION EXPLOSIVE !','#8b0000');
+          shake=2;sp(tx+.5,ty+.5,'#b266ff',25);sfxCorruption();
+          _sacredAuraDirty=true; // Rebuild aura cache
+          // Track Arbre-Chant cutting
+          if(tile===TT.ARBRE_CHANT){P._arbreChantCut=true;ft2(tx+.5,ty-3,'L\'Arbre-Chant tombe...','#daa520')}
+          // Trigger rare wood arrival check for luthier
+          if(!P._luthierArrived)checkLuthierArrival(tile);
+        }
         if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
+        // Player-planted trees regrow automatically in 1 cycle
+        if(regrowMap[ty]?._planted){
+          regrowMap[ty][tx]={ess:tile,time:gt+300}; // ~1 day/night cycle (300s)
+        }
         map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();
+        // Check luthier arrival on rare wood
+        if(!P._luthierArrived)checkLuthierArrival(tile);
         // Track first corruption trigger
         checkCorrTrigger(tx,ty);
         sp(tx+.5,ty+.5,'#52b788',10);sp(tx+.5,ty+.3,'#c9a86c',8);shake=.3;
@@ -3953,6 +4478,10 @@ function shopTitle(t){
   if(t===TT.ANTHRO)return'📚 Anthropologue';
   if(t===TT.HERM)return'🏚️ Ermite';
   if(t===TT.LUTH)return'🎻 Luthier';
+  if(t===TT.HERM_E)return'⚔️ Estelle — Entraînement';
+  if(t===TT.HERM_J)return'🌱 Le Jardinier';
+  if(t===TT.HERM_T)return'🎵 L\'Ermite Triste';
+  if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
   return'🏠 Village';
 }
 function updShop(){
@@ -3992,10 +4521,10 @@ function updShop(){
       encUnlocked
         ? {n:`🌀 Encens ×1 (stock: ${P._encensStock||0})`,c:20,a:()=>{P._encensStock=(P._encensStock||0)+1;ft2(P.x,P.y,'🌀+1','#74c69d')}}
         : {n:`🌀 Encens — 🔒 ${P.mushrooms}/${TUNING.mushsForEncens} champignons`,c:9999,a:()=>{}},
-      {n:`\ud83c\udf00 Rituel de purification (co\u00fbt: 3 s\u00e8ve, ${P._ritualsPerformed||0} effectu\u00e9s)`,c:P.sap>=3?0:9999,a:()=>{performRitual();updShop()}},
       {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellChamane} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellChamane;P.g+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
       {n:`   🌿 Herbes: ${P.herbs} · 🍄 Champignons: ${P.mushrooms}`,c:9999,a:()=>{}},
-      {n:`   \ud83c\udf31 Pousses: ${P._saplings||0} \u00b7 \ud83c\udf00 Rituels: ${P._ritualsPerformed||0} \u00b7 \ud83c\udf3f Puret\u00e9: ${P._purificationPct||0}%`,c:9999,a:()=>{}},
+      {n:`   ✨ Essences: ${P.essences||0} · 🌱 Plantées: ${P._saplings||0}`,c:9999,a:()=>{}},
+      {n:`   🌀 Rituels: ${P._ritualsPerformed||0} · 🌿 Pureté: ${P._purificationPct||0}%`,c:9999,a:()=>{}},
     ];
   }else if(t===TT.HOME){
     // Player's house: sleep + chest storage
@@ -4026,45 +4555,149 @@ function updShop(){
       {n:'🔬 Analyser sève (bonus +50% revente)',c:loreCount>=4?0:9999,a:()=>{P._sapBonus=true;ft2(P.x,P.y,'🔬 Sève analysée!','#b266ff')}},
     ];
   }else if(t===TT.HERM){
-    // Ermite: cryptic wisdom, unique items
-    const hermitBiome=P.y<40?3:P.y<100?2:1;
-    const wisdoms=[
-      'La forêt ne pardonne pas. Elle se souvient.',
-      'Ton grand-père savait. Il coupait un arbre, en plantait trois.',
-      'Les racines parlent entre elles. Coupe trop, elles crient.',
-      'Le Gardien dort. Mais plus pour longtemps.',
-    ];
-    const wisdom=wisdoms[Math.min(hermitBiome,wisdoms.length-1)];
+    // Generic lateral biome hermit
+    const wisdoms=['La forêt ne pardonne pas.','Les racines murmurent.','Le Gardien veille.','Coupe un séquoia, la forêt s\'en souviendra mille ans.'];
     items=[
-      {n:`💬 "${wisdom}"`,c:9999,a:()=>{}},
-      {n:'🍵 Thé de l\'ermite (stamina regen ×2, 120s)',c:5,a:()=>{P._encens=gt+120;ft2(P.x,P.y,'🍵 Vigueur!','#74c69d')}},
-      {n:'🗺️ Secret du coin (marque arbre sacré sur carte)',c:10,a:()=>{P._hermitMet=true;ft2(P.x,P.y,'📍 Arbre sacré marqué','#daa520')}},
+      {n:`💬 "${wisdoms[Math.floor(gt)%wisdoms.length]}"`,c:9999,a:()=>{}},
+      {n:'🍵 Thé de l\'ermite (stamina ×2, 120s)',c:5,a:()=>{P._encens=gt+120;ft2(P.x,P.y,'🍵 Vigueur!','#74c69d')}},
+      {n:'🗺️ Secret du coin',c:10,a:()=>{P._hermitMet=true;ft2(P.x,P.y,'📍 Arbre sacré marqué','#daa520')}},
     ];
+  }else if(t===TT.HERM_E){
+    // Estelle — Combat training
+    const t2=P._estelleTraining||0;
+    items=[];
+    if(t2===0) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus+=30;ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
+    if(t2>=1&&!P._hasSkillCircular) items.push({n:'⚔️ Apprendre: Attaque circulaire (ESPACE×2)',c:60,a:()=>{P._hasSkillCircular=true;P._estelleTraining=2;ft2(P.x,P.y,'⚔️ Attaque circulaire!','#cc4444');updShop()}});
+    if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
+    if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
+    if(t2>=4) items.push({n:'⚡ Stamina +25',c:80,a:()=>{P.msta+=25;P.sta=P.msta;P._staminaBonus+=25;ft2(P.x,P.y,'⚡+25 Stamina','#cc4444')}});
+    items.push({n:`   Entraînement: Niv.${t2} · Stamina bonus: +${P._staminaBonus||0}`,c:9999,a:()=>{}});
+  }else if(t===TT.HERM_J){
+    // Ermite Jardinier — Seeds & quest
+    items=[];
+    if(!P._jardinierQuestActive){
+      items.push({n:`🌱 Recevoir des graines (${TUNING.jardinierSeedCount} graines)`,c:0,a:()=>{
+        P.seeds+=TUNING.jardinierSeedCount;
+        P._jardinierQuestActive=true;
+        ft2(P.x,P.y,`🌱 +${TUNING.jardinierSeedCount} graines!`,'#52b788');
+        updShop();
+      }});
+    }
+    if(P._jardinierQuestActive&&!P._jardinierQuestDone){
+      const planted=P._seedsPlanted||0;
+      const needed=TUNING.jardinierSeedCount;
+      items.push({n:`   🌱 Plantées: ${planted}/${needed}`,c:9999,a:()=>{}});
+      items.push({n:`   📦 Graines en sac: ${P.seeds}`,c:9999,a:()=>{}});
+      if(planted>=needed&&!P._hasArbreChantSeed){
+        items.push({n:'🌳 Recevoir la graine d\'Arbre-Chant !',c:0,a:()=>{
+          P._hasArbreChantSeed=true;
+          P._jardinierQuestDone=true;
+          ft2(P.x,P.y,'🌳 Graine d\'Arbre-Chant obtenue!','#daa520');
+          sfxLore();shake=.5;
+          updShop();
+        }});
+      }
+    }
+    // Exchange herbs/mushrooms for seeds
+    if(P.herbs>=3) items.push({n:`🌿 Échanger 3 herbes → 5 graines (herbes: ${P.herbs})`,c:0,a:()=>{P.herbs-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
+    if(P.mushrooms>=3) items.push({n:`🍄 Échanger 3 champignons → 5 graines (champi: ${P.mushrooms})`,c:0,a:()=>{P.mushrooms-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
+    if(P._hasArbreChantSeed) items.push({n:'   🌳 Graine d\'Arbre-Chant en poche ! (P pour planter)',c:9999,a:()=>{}});
+  }else if(t===TT.HERM_T){
+    // Ermite Triste — Legendary Axe restoration
+    items=[];
+    if(P._brokenAxeItem&&!P._tristeLiberated&&P._luthierMasterpiece){
+      // Can restore the axe!
+      items.push({n:'⚔️ Restaurer la Hache Légendaire',c:0,a:()=>{
+        P._tristeLiberated=true;
+        P._legendaryAxeRestored=true;
+        P._hasLegendaryAxe=true;
+        P._brokenAxeItem=false;
+        P.axe=5;P.pow=5;
+        P._axeDur=200;P._axeMaxDur=200;
+        ft2(P.x,P.y,'⚔️ HACHE LÉGENDAIRE RESTAURÉE !','#ffd700');
+        sfxLore();shake=1;sp(P.x,P.y,'#ffd700',25);
+        updShop();
+      }});
+    }else if(P._brokenAxeItem&&!P._luthierMasterpiece){
+      items.push({n:'   L\'ermite veut entendre quelque chose de beau...',c:9999,a:()=>{}});
+      items.push({n:'   (Apporte un instrument du luthier)',c:9999,a:()=>{}});
+    }
+    items.push({n:`💬 "..." *silence*`,c:9999,a:()=>{}});
+    if(!P._brokenAxeItem) items.push({n:'   (Il semble attendre quelque chose...)',c:9999,a:()=>{}});
+  }else if(t===TT.BROKEN_AXE){
+    // Broken Legendary Axe pickup
+    items=[];
+    if(!P._brokenAxeFound){
+      items.push({n:'⚔️ Ramasser la Hache Brisée',c:0,a:()=>{
+        P._brokenAxeFound=true;
+        P._brokenAxeItem=true;
+        map[Math.floor(P.y)][Math.floor(P.x)]=TT.G; // Remove from map (find nearby BROKEN_AXE tile)
+        const bax=window._brokenAxePos;
+        if(bax)map[bax.y][bax.x]=TT.G;
+        ft2(P.x,P.y,'⚔️ Hache Légendaire Brisée trouvée!','#d4a574');
+        sfxLore();shake=.3;
+        updShop();
+      }});
+      items.push({n:'   Une hache ancienne, brisée. La lame a un éclat étrange...',c:9999,a:()=>{}});
+    }else{
+      items.push({n:'   (Déjà récupérée)',c:9999,a:()=>{}});
+    }
   }else if(t===TT.LUTH){
-    // Luthier: buys rare woods at premium prices
-    const rareTypes=[
-      {tt:TT.EBE,name:'\u00c9b\u00e8ne',price:25},
-      {tt:TT.PAL,name:'Palissandre',price:22},
-      {tt:TT.BDR,name:'Bois de Rose',price:30},
-      {tt:TT.EPI,name:'\u00c9pic\u00e9a de r\u00e9sonance',price:24},
-      {tt:TT.ERO,name:'\u00c9rable ond\u00e9',price:28},
+    // Luthier: instrument collection (wood→instruments)
+    const instrumentDefs=[
+      {tt:TT.EBE,name:'Ébène',instrument:'Luth d\'Ébène',cost:4},
+      {tt:TT.PAL,name:'Palissandre',instrument:'Guitare de Palissandre',cost:3},
+      {tt:TT.BDR,name:'Bois de Rose',instrument:'Violon de Rose',cost:3},
+      {tt:TT.EPI,name:'Épicéa',instrument:'Violoncelle d\'Épicéa',cost:4},
+      {tt:TT.ERO,name:'Érable ondé',instrument:'Harpe d\'Érable',cost:3},
     ];
     items=[];
-    rareTypes.forEach(rt=>{
-      const held=(P.woodByType||{})[rt.tt]||0;
-      items.push({n:`\ud83c\udfb5 Vendre ${rt.name} (${held}\u00d7 \u2192 ${held*rt.price} or)`,c:0,a:()=>{
-        if(held>0){
-          const gold2=held*rt.price;
-          P.g+=gold2;
-          P.w-=held;P.wv-=held*rt.price;
-          if(P.woodByType)P.woodByType[rt.tt]=0;
-          ft2(P.x,P.y,'\ud83d\udcb0+'+gold2,'#daa520');
-          updShop();
-        }
-      },wd:1});
+    const insts=P._instruments||[];
+    instrumentDefs.forEach(id=>{
+      const held=(P.woodByType||{})[id.tt]||0;
+      const alreadyHas=insts.some(i=>i.wood===id.tt);
+      if(alreadyHas){
+        items.push({n:`✅ ${id.instrument} (collecté)`,c:9999,a:()=>{}});
+      }else{
+        items.push({n:`🎵 Fabriquer ${id.instrument} (${id.cost}× ${id.name}, en sac: ${held})`,c:0,a:()=>{
+          if(held>=id.cost){
+            P.woodByType[id.tt]-=id.cost;
+            P.w-=id.cost;
+            P.wv=Math.max(0,(P.wv||0)-id.cost*(ESS[id.tt]?.gold||1));
+            P._instruments.push({name:id.instrument,wood:id.tt});
+            ft2(P.x,P.y,`🎵 ${id.instrument} fabriqué!`,'#d4a017');
+            sfxLore();
+            updShop();
+          }else{
+            ft2(P.x,P.y,`Pas assez de ${id.name} (${held}/${id.cost})`,'#e74c3c');
+          }
+        },wd:1});
+      }
     });
-    const totalRare=rareTypes.reduce((s,rt)=>s+((P.woodByType||{})[rt.tt]||0),0);
-    items.push({n:`   \ud83c\udfbb Bois rares en sac: ${totalRare}`,c:9999,a:()=>{}});
+    items.push({n:`   🎻 Collection: ${insts.length}/${instrumentDefs.length} instruments`,c:9999,a:()=>{}});
+    // Final quest: needs Arbre-Chant wood
+    if(insts.length>=3&&!P._luthierFinalQuest){
+      items.push({n:'🌟 Mission finale: Le chef-d\'œuvre',c:0,a:()=>{
+        P._luthierFinalQuest=true;
+        ft2(P.x,P.y,'Le luthier rêve d\'un instrument en bois sacré...','#d4a017');
+        updShop();
+      }});
+    }
+    if(P._luthierFinalQuest&&!P._luthierMasterpiece){
+      const chantWood=(P.woodByType||{})[TT.ARBRE_CHANT]||0;
+      if(chantWood>0){
+        items.push({n:'🌟 Créer le Chef-d\'œuvre (bois d\'Arbre-Chant)',c:0,a:()=>{
+          P.woodByType[TT.ARBRE_CHANT]-=1;P.w--;
+          P._luthierMasterpiece=true;
+          P._instruments.push({name:'Chef-d\'œuvre sacré',wood:TT.ARBRE_CHANT});
+          ft2(P.x,P.y,'🌟 CHEF-D\'ŒUVRE CRÉÉ !','#ffd700');
+          sfxLore();shake=.8;sp(P.x,P.y,'#ffd700',20);
+          updShop();
+        },wd:1});
+      }else{
+        items.push({n:'   🌟 Besoin de bois d\'Arbre-Chant (coupe ton Arbre-Chant)',c:9999,a:()=>{}});
+      }
+    }
     }else if(t===TT.EMIS){
     // Émissaire: sell wood, contracts, loans
     // Generate new contract if none active and cooldown expired
@@ -4146,6 +4779,15 @@ function updShop(){
       if(count>0){const ess=ESS[tt];if(ess)items.push({n:`  🌲 ${ess.name}: ${count}`,c:9999,a:()=>{}});}
     }
     items.push({n:`💧 Sève: ${P.sap}`,c:9999,a:()=>{}});
+    items.push({n:`✨ Essences spirituelles: ${P.essences||0}`,c:9999,a:()=>{}});
+    if(P.seeds>0) items.push({n:`🌱 Graines: ${P.seeds}`,c:9999,a:()=>{}});
+    if(P._hasArbreChantSeed) items.push({n:`🌳 Graine d'Arbre-Chant`,c:9999,a:()=>{}});
+    if(P._brokenAxeItem) items.push({n:`⚔️ Hache Légendaire Brisée`,c:9999,a:()=>{}});
+    if(P._hasLegendaryAxe) items.push({n:`⚔️ Hache Légendaire (Niv.5)`,c:9999,a:()=>{}});
+    if((P._instruments||[]).length>0){
+      items.push({n:`── Instruments (${P._instruments.length}) ──`,c:9999,a:()=>{}});
+      P._instruments.forEach(i=>items.push({n:`  🎵 ${i.name}`,c:9999,a:()=>{}}));
+    }
     // Active contract reminder
     if(P._contract){
       const ct=P._contract;
@@ -4191,7 +4833,7 @@ function updShop(){
     co.appendChild(d2);
   });
 }
-function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);wildlife=[];wolves=[];document.getElementById('dth').style.display='none'}
+function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);P.seeds=0;P.essences=Math.floor((P.essences||0)/2);wildlife=[];wolves=[];sacredMiniBosses=[];document.getElementById('dth').style.display='none'}
 
 // ============ RENDERING ============
 function dSp(k,wx,wy,ox=0,oy=0,a=1){const s=_s[k];if(!s)return;if(a<1)X.globalAlpha=a;const hd=s._hd||1;const dw=s.width/hd*SC,dh=s.height/hd*SC;X.drawImage(s,0,0,s.width,s.height,(wx-smCam.x)*T*SC+ox*SC,(wy-smCam.y)*T*SC+oy*SC,dw,dh);if(a<1)X.globalAlpha=1}
@@ -4256,6 +4898,11 @@ function dGround(sx,sy,wx,wy){
   if(cr>.2&&(wx*3+wy*7)%3===0){const ms=_s['mush'];if(ms){const mhd=ms._hd||1;X.globalAlpha=Math.min(1,(cr-.2)*2.5);X.drawImage(ms,0,0,ms.width,ms.height,px2+((wx*13)%5)*SC,py2+((wy*7)%5)*SC,ms.width/mhd*SC,ms.height/mhd*SC);X.globalAlpha=1}}
   if(cr>.45){X.strokeStyle=`rgba(50,15,70,${cr*.55})`;X.lineWidth=SC*1.5;X.beginPath();X.moveTo(px2,py2+s*((wx%3)/3));X.bezierCurveTo(px2+s*.3+Math.sin(gt*.5+wx)*s*.1,py2+s*.2,px2+s*.7,py2+s*.8,px2+s,py2+s*((wy%3)/3));X.stroke()}
   if(cr>.7){const pulse=.4+Math.sin(gt*3+wx+wy)*.2;X.globalAlpha=pulse;X.fillStyle=`rgba(70,20,90,${(cr-.7)})`;X.fillRect(px2+2*SC,py2+2*SC,3*SC,3*SC);X.fillRect(px2+s-5*SC,py2+s-5*SC,3*SC,3*SC);X.globalAlpha=1}
+  // Sacred aura indicator (subtle golden shimmer)
+  if(cr<0.05&&inSacredAura(wx,wy)){
+    const ap=Math.sin(gt*1.5+wx*.3+wy*.7)*.03+.04;
+    X.globalAlpha=ap;X.fillStyle='#ffd700';X.fillRect(px2,py2,s,s);X.globalAlpha=1;
+  }
 }
 
 function dObj(wx,wy){
@@ -4277,6 +4924,83 @@ function dObj(wx,wy){
   else if(tile===TT.CARTO){X.fillStyle='#3a6b9f';X.fillRect(wx+8,wy-8,48,48);X.fillStyle='#2a5a8a';X.fillRect(wx+12,wy-4,40,40);X.fillStyle='#f5e6c8';X.fillRect(wx+20,wy+4,24,24);X.fillStyle='#4a90d9';X.fillRect(wx+48,wy-14,12,8);X.fillStyle='#5a3a1a';X.fillRect(wx+46,wy-18,4,22)}
   else if(tile===TT.ANTHRO){X.fillStyle='#8b6914';X.fillRect(wx+6,wy-6,52,46);X.fillStyle='#a0782a';X.fillRect(wx+10,wy-2,44,38);X.fillStyle='#f0e6d0';X.fillRect(wx+16,wy+6,12,20);X.fillStyle='#daa520';X.fillRect(wx+36,wy+8,8,16)}
   else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(wx+4,wy-12,56,52);X.fillStyle='#4a5a3a';X.fillRect(wx+8,wy-8,48,44);X.fillStyle='#2a3a1a';X.fillRect(wx+2,wy-16,60,8);X.fillStyle='#1a2a0a';X.fillRect(wx+24,wy+4,16,28);X.fillStyle='#52b788';X.fillRect(wx+6,wy-10,4,20)}
+  else if(tile===TT.HERM_E){
+    // Estelle's training ground — combat-themed hut
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#4a2a2a';X.fillRect(sx2+4*SC,sy2-12*SC,56*SC,52*SC);
+    X.fillStyle='#6a3a3a';X.fillRect(sx2+8*SC,sy2-8*SC,48*SC,44*SC);
+    X.fillStyle='#3a1a1a';X.fillRect(sx2+2*SC,sy2-16*SC,60*SC,8*SC);
+    // Sword sign
+    X.fillStyle='#ccc';X.fillRect(sx2+46*SC,sy2-18*SC,4*SC,22*SC);
+    X.fillStyle='#aaa';X.fillRect(sx2+42*SC,sy2-8*SC,12*SC,4*SC);
+  }
+  else if(tile===TT.HERM_J){
+    // Jardinier's garden hut — green, flowers
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#2a5a2a';X.fillRect(sx2+4*SC,sy2-12*SC,56*SC,52*SC);
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+8*SC,sy2-8*SC,48*SC,44*SC);
+    X.fillStyle='#1a4a1a';X.fillRect(sx2+2*SC,sy2-16*SC,60*SC,8*SC);
+    X.fillStyle='#52b788';X.fillRect(sx2+24*SC,sy2+4*SC,16*SC,28*SC);
+    // Garden decorations
+    X.fillStyle='#ff6b6b';X.fillRect(sx2+6*SC,sy2-8*SC,4*SC,4*SC);
+    X.fillStyle='#ffd700';X.fillRect(sx2+14*SC,sy2-6*SC,4*SC,4*SC);
+    X.fillStyle='#52b788';X.fillRect(sx2+10*SC,sy2-10*SC,6*SC,6*SC);
+  }
+  else if(tile===TT.HERM_T){
+    // Ermite Triste's dark cabin
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#2a2a3a';X.fillRect(sx2+4*SC,sy2-12*SC,56*SC,52*SC);
+    X.fillStyle='#3a3a4a';X.fillRect(sx2+8*SC,sy2-8*SC,48*SC,44*SC);
+    X.fillStyle='#1a1a2a';X.fillRect(sx2+2*SC,sy2-16*SC,60*SC,8*SC);
+    X.fillStyle='#1a1a2a';X.fillRect(sx2+24*SC,sy2+4*SC,16*SC,28*SC);
+    // Broken instrument symbol
+    X.fillStyle='#6a5a4a';X.fillRect(sx2+44*SC,sy2-14*SC,8*SC,16*SC);
+    X.strokeStyle='#888';X.lineWidth=1*SC;X.beginPath();X.moveTo(sx2+44*SC,sy2-6*SC);X.lineTo(sx2+52*SC,sy2-14*SC);X.stroke();
+  }
+  else if(tile===TT.BROKEN_AXE){
+    // Broken axe on the ground — glowing relic
+    const sx2=px2,sy2=py2;
+    const pulse=Math.sin(gt*2)*.15+.85;
+    X.globalAlpha=.15*pulse;X.fillStyle='#daa520';
+    X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T/2*SC,20*SC,20*SC,0,0,Math.PI*2);X.fill();
+    X.globalAlpha=1;
+    // Axe handle
+    X.fillStyle='#6a4a2a';X.fillRect(sx2+10*SC,sy2+8*SC,6*SC,28*SC);
+    // Broken blade
+    X.fillStyle='#8a7a5a';X.fillRect(sx2+6*SC,sy2+4*SC,14*SC,8*SC);
+    X.fillStyle='#6a6a5a';X.fillRect(sx2+16*SC,sy2+6*SC,8*SC,6*SC);
+    // Crack
+    X.fillStyle='#333';X.fillRect(sx2+14*SC,sy2+5*SC,2*SC,6*SC);
+  }
+  else if(tile===TT.SEED_TILE){
+    // Growing seed — small sprout
+    const sx2=px2,sy2=py2;
+    const grow=Math.sin(gt*3+wx+wy)*.5+.5;
+    X.fillStyle='#52b788';X.fillRect(sx2+28*SC,sy2+20*SC,4*SC,(8+grow*4)*SC);
+    X.fillStyle='#74c69d';X.fillRect(sx2+24*SC,sy2+(16-grow*2)*SC,12*SC,8*SC);
+    X.fillStyle='#40916c';X.fillRect(sx2+26*SC,sy2+(12-grow*3)*SC,8*SC,6*SC);
+  }
+  else if(tile===TT.ARBRE_CHANT){
+    // Arbre-Chant: unique, iridescent sacred tree
+    const sx2=px2,sy2=py2;
+    // Ground shadow
+    X.fillStyle='rgba(0,0,0,0.2)';X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T*SC,24*SC,8*SC,0,0,Math.PI*2);X.fill();
+    // Trunk — luminous
+    const tp=Math.sin(gt*1.5)*.1+.9;
+    X.fillStyle=`rgba(140,120,80,${tp})`;X.fillRect(sx2+22*SC,sy2-40*SC,20*SC,72*SC);
+    X.fillStyle=`rgba(180,160,100,${tp*.7})`;X.fillRect(sx2+26*SC,sy2-38*SC,12*SC,68*SC);
+    // Iridescent canopy — shifting colors
+    const hue=(gt*30+wx*10)%360;
+    X.fillStyle=`hsla(${hue},60%,40%,0.9)`;X.beginPath();X.ellipse(sx2+T/2*SC,sy2-50*SC,30*SC,25*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle=`hsla(${(hue+60)%360},50%,50%,0.7)`;X.beginPath();X.ellipse(sx2+T/2*SC,sy2-55*SC,22*SC,18*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle=`hsla(${(hue+120)%360},40%,60%,0.5)`;X.beginPath();X.ellipse(sx2+T/2*SC,sy2-58*SC,14*SC,12*SC,0,0,Math.PI*2);X.fill();
+    // Golden aura
+    const ag=X.createRadialGradient(sx2+T/2*SC,sy2-30*SC,5*SC,sx2+T/2*SC,sy2-30*SC,60*SC);
+    ag.addColorStop(0,'rgba(255,215,0,0.15)');ag.addColorStop(1,'rgba(255,215,0,0)');
+    X.fillStyle=ag;X.fillRect(sx2-30*SC,sy2-90*SC,120*SC,120*SC);
+    // Sparkle particles
+    if(Math.random()<.05)amb.push({x:wx+Math.random(),y:wy-1+Math.random(),vx:(Math.random()-.5)*.3,vy:-.4,l:1.5+Math.random(),ml:2,c:Math.random()>.5?'#ffd700':'#daa520',s:1.2,rot:0});
+  }
   else if(tile===TT.PRIM){
     // Primordial tree - extra large, pulsing glow
     const primSpr=_s['prim'];if(primSpr){
@@ -4683,7 +5407,7 @@ function dInteractPrompts(){
     if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){
       const t=map[ny2][nx2];
       // Sacred tree interaction prompt
-      if(t===TT.TJ){
+      if(t===TT.TJ||t===TT.ARBRE_CHANT){
         const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
         const bob=Math.sin(gt*2)*4*SC;
         X.globalAlpha=.9;
@@ -4698,16 +5422,30 @@ function dInteractPrompts(){
         X.globalAlpha=1;
         return;
       }
-      if(t===TT.ST && P.g>=5){
-        const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
-        const bob=Math.sin(gt*2)*3*SC;
-        X.globalAlpha=.7;
-        X.fillStyle='rgba(30,60,30,.8)';
-        const bw2=40*SC,bh2=12*SC;
-        X.beginPath();if(X.roundRect)X.roundRect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2,3*SC);else X.rect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2);X.fill();
-        X.font=`bold ${7*SC}px monospace`;X.textAlign='center';
-        X.fillStyle='#52b788';X.fillText('P Planter',sx+T/2*SC,sy-30*SC+bob+2*SC);
-        X.globalAlpha=1;
+      if(t===TT.ST && (P.seeds>0||P._hasArbreChantSeed)){
+        const cr2=(corr[ny2]&&corr[ny2][nx2])||0;
+        if(cr2<=0.2){
+          const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
+          const bob=Math.sin(gt*2)*3*SC;
+          X.globalAlpha=.7;
+          X.fillStyle='rgba(30,60,30,.8)';
+          const bw2=40*SC,bh2=12*SC;
+          X.beginPath();if(X.roundRect)X.roundRect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2,3*SC);else X.rect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2);X.fill();
+          X.font=`bold ${7*SC}px monospace`;X.textAlign='center';
+          X.fillStyle=P._hasArbreChantSeed?'#daa520':'#52b788';
+          X.fillText(P._hasArbreChantSeed?'P Arbre-Chant':'P Planter',sx+T/2*SC,sy-30*SC+bob+2*SC);
+          X.globalAlpha=1;
+        }else if(cr2>0.2&&(P.essences||0)>=TUNING.purifyEssenceCost&&P.sap>=TUNING.purifySapCost){
+          const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
+          const bob=Math.sin(gt*2)*3*SC;
+          X.globalAlpha=.7;
+          X.fillStyle='rgba(60,20,60,.8)';
+          const bw2=42*SC,bh2=12*SC;
+          X.beginPath();if(X.roundRect)X.roundRect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2,3*SC);else X.rect(sx+T/2*SC-bw2/2,sy-30*SC+bob-bh2/2,bw2,bh2);X.fill();
+          X.font=`bold ${7*SC}px monospace`;X.textAlign='center';
+          X.fillStyle='#b266ff';X.fillText('R Purifier',sx+T/2*SC,sy-30*SC+bob+2*SC);
+          X.globalAlpha=1;
+        }
       }
             if(isBld(t)&&t!==TT.SH){
         const nd=NPC_DATA[t];
@@ -4776,6 +5514,34 @@ function dUI(){
 }
 
 
+
+// ============ SACRED MINI-BOSSES RENDERING ============
+function dSacredMiniBosses(){
+  sacredMiniBosses.forEach(b=>{
+    if(b.defeated)return;
+    const sx=(b.x-smCam.x)*T*SC, sy=(b.y-smCam.y)*T*SC;
+    // Shadow
+    X.fillStyle='rgba(0,0,0,0.3)';X.beginPath();X.ellipse(sx,sy+20*SC,15*SC,5*SC,0,0,Math.PI*2);X.fill();
+    // Spirit body — ethereal glow
+    const pulse=Math.sin(gt*3+b.x)*.15+.85;
+    X.globalAlpha=pulse;
+    X.fillStyle='rgba(210,165,0,0.4)';X.beginPath();X.ellipse(sx,sy-10*SC,20*SC,25*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#daa520';X.beginPath();X.ellipse(sx,sy-10*SC,12*SC,16*SC,0,0,Math.PI*2);X.fill();
+    // Eyes
+    X.fillStyle='#fff';X.fillRect(sx-6*SC,sy-16*SC,4*SC,4*SC);X.fillRect(sx+2*SC,sy-16*SC,4*SC,4*SC);
+    X.fillStyle='#ff4040';X.fillRect(sx-5*SC,sy-15*SC,2*SC,2*SC);X.fillRect(sx+3*SC,sy-15*SC,2*SC,2*SC);
+    X.globalAlpha=1;
+    // HP bar
+    const hp2=b.hp/b.mhp;
+    X.fillStyle='rgba(0,0,0,0.7)';X.fillRect(sx-20*SC,sy-35*SC,40*SC,5*SC);
+    X.fillStyle=hp2>.5?'#daa520':hp2>.25?'#e67e22':'#e74c3c';
+    X.fillRect(sx-20*SC,sy-35*SC,40*hp2*SC,5*SC);
+    X.font='bold '+6*SC+'px monospace';X.textAlign='center';
+    X.fillStyle='#daa520';X.fillText(b.name,sx,sy-40*SC);
+    // Hit flash
+    if(b.ht>0){X.globalAlpha=.4;X.fillStyle='#fff';X.beginPath();X.ellipse(sx,sy-10*SC,12*SC,16*SC,0,0,Math.PI*2);X.fill();X.globalAlpha=1}
+  });
+}
 
 // ============ LATERAL BOSSES ============
 let bossEast = null;  // Arbre-pieuvre
@@ -5040,7 +5806,7 @@ function updGuardian(d){
   
   // Melee damage
   if(dist<1.2 && P.iv<=0){
-    hurtP(g.dmg,1.2,.4,.8,'#8b0000',10);
+    hurtP(g.dmg,1.2,.4,.8,'#8b0000',10,g);
   }
   
   // Root attack (phase 1+2)
@@ -5191,41 +5957,119 @@ function drawGuardian(){
 }
 
 // ============ PURIFICATION SYSTEM ============
-function canPlantSapling(tx,ty){
-  return map[ty]&&map[ty][tx]===TT.ST && P.g>=5;
+function canPlantSeed(tx,ty){
+  // Can plant on clean (non-corrupted) soil that is either grass or stump with low corruption
+  if(!map[ty]||tx<0||ty<0||tx>=MW||ty>=MH)return false;
+  const tile=map[ty][tx];
+  const cr=(corr[ty]&&corr[ty][tx])||0;
+  if(cr>0.2)return false; // Cannot plant on corrupted soil
+  if(tile===TT.ST||tile===TT.G)return P.seeds>0;
+  return false;
 }
-function plantSapling(tx,ty){
-  if(!canPlantSapling(tx,ty))return;
-  map[ty][tx]=TT.SAP_T;
-  P.g-=5;
+function plantSeed(tx,ty){
+  if(!canPlantSeed(tx,ty))return;
+  // Determine seed species based on biome
+  const biome=ty<40?3:ty<100?2:ty<170?1:0;
+  const seedEss=biome===0?TT.BOU:biome===1?TT.PIN:biome===2?TT.IFS:TT.SEQ;
+  map[ty][tx]=TT.SEED_TILE;
+  if(!regrowMap[ty])regrowMap[ty]=[];
+  regrowMap[ty][tx]={ess:seedEss,time:gt+300,planted:true}; // 1 day/night cycle (~300s)
+  P.seeds--;
+  P._seedsPlanted=(P._seedsPlanted||0)+1;
   P._saplings++;
-  ft2(tx+.5,ty-.5,'\ud83c\udf31 Plant\u00e9e!','#52b788');
-  sp(tx+.5,ty+.5,'#52b788',6);
-  // Reduce corruption around sapling
+  ft2(tx+.5,ty-.5,'🌱 Graine plantée!','#52b788');
+  sp(tx+.5,ty+.5,'#52b788',8);sfxPickup();
+  // Reduce corruption slightly
   for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
     const nx=tx+dx,ny=ty+dy;
     if(ny>=0&&ny<MH&&nx>=0&&nx<MW&&corr[ny]&&corr[ny][nx]!==undefined){
-      corr[ny][nx]=Math.max(0,corr[ny][nx]-0.15);
+      corr[ny][nx]=Math.max(0,corr[ny][nx]-0.1);
     }
   }
-  setTimeout(checkPurification,50); // defer to avoid frame spike
+  setTimeout(checkPurification,50);
+}
+function plantArbreChant(tx,ty){
+  // Plant the unique Arbre-Chant seed
+  if(!P._hasArbreChantSeed)return;
+  const cr=(corr[ty]&&corr[ty][tx])||0;
+  if(cr>0.1){ft2(P.x,P.y,'Sol trop corrompu pour l\'Arbre-Chant','#e74c3c');return}
+  if(map[ty][tx]!==TT.G&&map[ty][tx]!==TT.ST){ft2(P.x,P.y,'Terrain inadapté','#e74c3c');return}
+  map[ty][tx]=TT.SEED_TILE;
+  regrowMap[ty][tx]={ess:TT.ARBRE_CHANT,time:gt+300,planted:true}; // 1 cycle
+  P._hasArbreChantSeed=false;
+  P._arbreChantPlanted=true;
+  P._arbreChantPos={x:tx,y:ty};
+  ft2(tx+.5,ty-1,'🌳 L\'Arbre-Chant est planté!','#daa520');
+  ft2(tx+.5,ty-2,'Sa lumière se répand...','#ffd700');
+  sp(tx+.5,ty+.5,'#ffd700',20);sp(tx+.5,ty+.5,'#52b788',15);
+  shake=.5;sfxLore();
+  setTimeout(()=>{_sacredAuraDirty=true;checkPurification()},100);
+}
+// Seed growth system
+let _seedGrowT=0;
+function updSeedGrowth(d){
+  _seedGrowT+=d;if(_seedGrowT<3)return;_seedGrowT=0;
+  for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    if(map[y][x]===TT.SEED_TILE){
+      const rg=regrowMap[y]?.[x];
+      if(rg&&gt>=rg.time){
+        map[y][x]=rg.ess;
+        // Mark as player-planted for auto-regrow
+        if(!regrowMap[y])regrowMap[y]=[];
+        regrowMap[y][x]={ess:rg.ess,time:0,planted:true};
+        const dx2=x-P.x,dy2=y-P.y;
+        if(Math.sqrt(dx2*dx2+dy2*dy2)<16){
+          sp(x+.5,y+.5,'#52b788',10);
+          ft2(x+.5,y,'🌳 Arbre mature!','#74c69d');
+          sfxPickup();
+        }
+        // If this is an Arbre-Chant, rebuild sacred aura
+        if(rg.ess===TT.ARBRE_CHANT)_sacredAuraDirty=true;
+      }
+    }
+  }
 }
 function performRitual(){
-  // Must be at a sacred tree with sap
-  if(P.sap<3){ft2(P.x,P.y,'Pas assez de s\u00e8ve (3 requises)','#e74c3c');return false}
-  P.sap-=3;
-  P._ritualsPerformed++;sfxPurify();
-  ft2(P.x,P.y,'\ud83c\udf00 Rituel de purification!','#74c69d');
-  sp(P.x,P.y,'#52b788',15);sp(P.x,P.y,'#ffd700',10);
-  // Massive corruption reduction in radius 12
-  const px=Math.floor(P.x),py=Math.floor(P.y);
-  for(let dy=-12;dy<=12;dy++)for(let dx=-12;dx<=12;dx++){
-    const nx=px+dx,ny=py+dy;
-    if(ny>=0&&ny<MH&&nx>=0&&nx<MW&&corr[ny]){
-      const dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist<12) corr[ny][nx]=Math.max(0,corr[ny][nx]-0.4*(1-dist/12));
+  // Enhanced: works on corrupted stumps, costs essences + sap
+  // Check: near a corrupted stump or sacred tree
+  const px2=Math.floor(P.x),py2=Math.floor(P.y);
+  let nearTarget=false;
+  for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+    const nx=px2+dx,ny=py2+dy;
+    if(nx>=0&&ny>=0&&nx<MW&&ny<MH){
+      const t=map[ny][nx];
+      const cr=(corr[ny]&&corr[ny][nx])||0;
+      if(t===TT.TJ||t===TT.ARBRE_CHANT||(t===TT.ST&&cr>0.2))nearTarget=true;
     }
   }
+  if(!nearTarget){ft2(P.x,P.y,'Approche une souche corrompue ou un arbre sacré','#e9c46a');return false}
+  // Cost: spiritual essences + sap
+  const eCost=TUNING.purifyEssenceCost;
+  const sCost=TUNING.purifySapCost;
+  if((P.essences||0)<eCost){ft2(P.x,P.y,`Pas assez d'essences (${P.essences||0}/${eCost})`,'#e74c3c');return false}
+  if(P.sap<sCost){ft2(P.x,P.y,`Pas assez de sève (${P.sap}/${sCost})`,'#e74c3c');return false}
+  P.essences-=eCost;
+  P.sap-=sCost;
+  P._ritualsPerformed++;sfxPurify();
+  ft2(P.x,P.y,'🌀 Rituel de purification!','#74c69d');
+  sp(P.x,P.y,'#52b788',15);sp(P.x,P.y,'#ffd700',10);
+  // Purify corruption in radius
+  const r=TUNING.purifyRadius;
+  for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    const nx=px2+dx,ny=py2+dy;
+    if(ny>=0&&ny<MH&&nx>=0&&nx<MW&&corr[ny]){
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<r){
+        corr[ny][nx]=Math.max(0,corr[ny][nx]-0.5*(1-dist/r));
+        // Remove corruption sources that are fully purified
+        if(corr[ny][nx]<0.05&&corrSrc[ny]&&corrSrc[ny][nx]){
+          corrSrc[ny][nx]=false;
+          _corrSources=_corrSources.filter(([sx,sy])=>sx!==nx||sy!==ny);
+        }
+      }
+    }
+  }
+  P._zonesRestored=(P._zonesRestored||0)+1;
   shake=.4;
   checkPurification();
   return true;
@@ -5237,8 +6081,8 @@ function checkPurification(){
     if(map[y]&&map[y][x]!==TT.WA){total++;if(corr[y]&&corr[y][x]>.1)corrupted++}
   }
   P._purificationPct=Math.round((1-corrupted/Math.max(1,total))*100);
-  // Check for purify ending
-  if(P._purificationPct>=95 && P._saplings>=15 && P._ritualsPerformed>=3 && P._guardianDefeated){
+  // Check for purify ending ("Réparateur")
+  if(P._purificationPct>=95 && P._saplings>=15 && P._ritualsPerformed>=3 && P._guardianDefeated && (P._zonesRestored||0)>=5){
     P._ending='purify';
     triggerEnding('purify');
   }
@@ -5428,7 +6272,7 @@ function updateEnding(){
 // Add to keydown handler — we'll hook into updP2
 
 // ============ VILLAGE EVOLUTION ============
-let _vilBarricade=false, _vilCarto=false, _vilAnthro=false;
+let _vilBarricade=false, _vilCarto=false, _vilAnthro=false, _vilLuthier=false;
 function evolveVillage(){
   const VIL_Y=MH-12, CX=128;
   // Barricades after first corruption
@@ -5462,6 +6306,15 @@ function evolveVillage(){
       map[cy][cx]=TT.ANTHRO;
     }
   }
+  // Luthier arrives at village after first rare wood cut
+  if(P._luthierArrived && !_vilLuthier){
+    _vilLuthier=true;
+    const cx=CX+11, cy=VIL_Y+3;
+    if(cy<MH && cx<MW){
+      map[cy][cx]=TT.LUTH;
+      ft2(P.x,P.y-1,'🎻 Le luthier s\'installe au village!','#d4a017');
+    }
+  }
 }
 
 // ============ MAIN ============
@@ -5489,7 +6342,7 @@ function loop(ts){
       spawnGuardian(pp.x,pp.y);
     }
   }
-  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
+  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
 
@@ -5515,7 +6368,7 @@ function loop(ts){
   wildlife.forEach(w=>dl.push({tp:'w',w,x:w.x,y:w.y,sy:w.y}));
   dl.sort((a,b)=>a.sy-b.sy);
   dl.forEach(item=>{if(item.tp==='t')dObj(item.x,item.y);else if(item.tp==='p')dPlayer();else if(item.tp==='wlf')dWolves_single(item.w);else if(item.tp==='w')dWildlife_single(item.w)});
-  dFigurants();dEnts();dParts2();dInteractPrompts();
+  dFigurants();dEnts();dSacredMiniBosses();dParts2();dInteractPrompts();
   X.restore();
 
   dLighting();dFX();dUI();
