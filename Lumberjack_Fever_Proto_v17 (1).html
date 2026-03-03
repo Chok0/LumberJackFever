@@ -1776,6 +1776,116 @@ function initSprites(){
       }
     });
   }
+
+  // ===== WILDLIFE HD SPRITES =====
+  // Deer (64×56 HD, 2 frames)
+  for(let f=0;f<2;f++){
+    mkHD('deer'+f,64,56,(c)=>{
+      const CX=32;
+      // Body — warm brown with zone shading
+      const bY=26,bW=28,bH=16;
+      for(let y=0;y<bH;y++)for(let x=0;x<bW;x++){
+        const xn=x/bW,yn=y/bH;
+        const ld=Math.sqrt((xn-.3)**2+(yn-.3)**2)*1.5;
+        let cl;if(ld<.4)cl='#d0a068';else if(ld<.7)cl='#c08850';else cl='#a06838';
+        if(yn>.85)cl='#8a5828';
+        px(c,CX-bW/2+x|0,bY+y,cl);
+      }
+      // Legs — walking animation
+      const legOff=f*3-1;
+      rc(c,CX-10,bY+bH,4,10+legOff,'#8a6535');rc(c,CX-8,bY+bH,2,8+legOff,'#9a7545');
+      rc(c,CX+6,bY+bH,4,10-legOff,'#8a6535');rc(c,CX+8,bY+bH,2,8-legOff,'#9a7545');
+      // Hooves
+      rc(c,CX-10,bY+bH+8+legOff,4,2,'#4a3020');
+      rc(c,CX+6,bY+bH+8-legOff,4,2,'#4a3020');
+      // Head (facing right)
+      rc(c,CX+12,bY-4,10,12,'#c08850');rc(c,CX+14,bY-2,8,10,'#c89860');
+      // Muzzle
+      rc(c,CX+20,bY+2,4,6,'#b8a078');
+      // Eye
+      px(c,CX+18,bY,'#222');px(c,CX+19,bY-1,'#333');
+      // Nose
+      px(c,CX+23,bY+4,'#4a3020');
+      // Antlers
+      rc(c,CX+14,bY-10,2,6,'#a08060');rc(c,CX+12,bY-12,2,4,'#a08060');
+      rc(c,CX+20,bY-10,2,6,'#a08060');rc(c,CX+22,bY-12,2,4,'#a08060');
+      // Antler tips
+      px(c,CX+11,bY-12,'#b09070');px(c,CX+23,bY-12,'#b09070');
+      // Belly highlight
+      rc(c,CX-8,bY+bH-3,16,2,'#d0b078');
+      // White tail
+      rc(c,CX-14,bY+2,4,6,'#f0e8d8');rc(c,CX-13,bY+3,2,4,'#fff');
+      // Ear
+      rc(c,CX+16,bY-6,4,4,'#b88848');px(c,CX+17,bY-5,'#daa080');
+    });
+  }
+
+  // Rabbit (40×36 HD, 2 frames)
+  for(let f=0;f<2;f++){
+    mkHD('rab'+f,40,36,(c)=>{
+      const CX=20;
+      // Body — round, soft
+      fE(c,CX,20,12,8,'#b0a080');
+      fE(c,CX,19,10,7,'#cbb898');
+      fE(c,CX-1,18,6,5,'#d8c8a8');
+      // Ears
+      rc(c,CX-6,4,4,12,'#d0c0a0');rc(c,CX-5,6,2,8,'#e8a0a0');
+      rc(c,CX+2,4,4,12,'#d0c0a0');rc(c,CX+3,6,2,8,'#e8a0a0');
+      // Ear tips
+      px(c,CX-5,4,'#c0b090');px(c,CX+3,4,'#c0b090');
+      // Legs
+      const hop=f*4;
+      rc(c,CX-8,24+hop,4,6,'#b0a080');rc(c,CX-7,24+hop,2,5,'#c0b090');
+      rc(c,CX+4,24+4-hop,4,6,'#b0a080');rc(c,CX+5,24+4-hop,2,5,'#c0b090');
+      // Paws
+      rc(c,CX-8,29+hop,4,2,'#d0c0a0');rc(c,CX+4,29+4-hop,4,2,'#d0c0a0');
+      // Eye
+      px(c,CX+4,16,'#333');px(c,CX+5,15,'#444');
+      // Nose
+      px(c,CX+8,18,'#e8a0a0');
+      // Cotton tail
+      rc(c,CX-10,18,4,4,'#fff');rc(c,CX-9,19,2,2,'#f0f0f0');
+      // Whiskers
+      px(c,CX+10,17,'rgba(100,80,60,0.3)');px(c,CX+10,19,'rgba(100,80,60,0.3)');
+    });
+  }
+
+  // Birds (36×28 HD, 3 palettes × 2 frames)
+  const bPals=[
+    {body:'#4a7a9a',wing:'#3a6a8a',breast:'#6a9ab0'},
+    {body:'#8a5a3a',wing:'#7a4a2a',breast:'#aa7a5a'},
+    {body:'#3a6a4a',wing:'#2a5a3a',breast:'#5a8a6a'},
+  ];
+  for(let b=0;b<3;b++){
+    for(let f=0;f<2;f++){
+      mkHD(`bird${b}_${f}`,36,28,(c)=>{
+        const CX=18,BY=14,p=bPals[b];
+        // Body
+        fE(c,CX,BY,8,5,p.body);
+        fE(c,CX-1,BY-1,6,4,p.breast);
+        // Eye
+        px(c,CX+5,BY-2,'#111');px(c,CX+6,BY-3,'#222');
+        // Beak
+        rc(c,CX+8,BY-1,4,2,'#e8a030');px(c,CX+11,BY-1,'#d08020');
+        // Tail
+        rc(c,CX-8,BY-1,4,3,p.wing);rc(c,CX-10,BY,3,2,p.wing);
+        // Wings
+        if(f===0){
+          fE(c,CX-2,BY+1,6,3,p.wing);
+        }else{
+          rc(c,CX-6,BY-6,5,4,p.wing);px(c,CX-7,BY-7,p.wing);
+          rc(c,CX+3,BY-5,5,3,p.wing);px(c,CX+7,BY-6,p.wing);
+        }
+        // Feet (resting only)
+        if(f===0){
+          px(c,CX-2,BY+5,'#888');px(c,CX-3,BY+6,'#888');px(c,CX-1,BY+6,'#888');
+          px(c,CX+2,BY+5,'#888');px(c,CX+1,BY+6,'#888');px(c,CX+3,BY+6,'#888');
+        }
+        // Breast spot
+        px(c,CX+1,BY,'#fff');
+      });
+    }
+  }
 }
 
 // ============ NPC PORTRAITS & DIALOGUE ============
@@ -3231,7 +3341,7 @@ function spawnWildlife(){
     }else if(rabbit<TUNING.wildlifeMaxRabbit&&Math.random()<.5){
       wildlife.push({tp:'rabbit',x:sx+.5,y:sy+.5,vx:0,vy:0,f:Math.floor(Math.random()*4),wa:0,fleeing:false,fleeT:0,fleeX:sx,fleeY:sy,idle:Math.random()*3,grazing:false});
     }else if(bird<TUNING.wildlifeMaxBird&&Math.random()<.6){
-      wildlife.push({tp:'bird',x:sx+.5,y:sy+.5,vx:0,vy:0,f:0,wa:0,fleeing:false,fleeT:0,fleeX:sx,fleeY:sy,idle:Math.random()*4,flying:false,flyH:0});
+      wildlife.push({tp:'bird',x:sx+.5,y:sy+.5,vx:0,vy:0,f:0,wa:0,fleeing:false,fleeT:0,fleeX:sx,fleeY:sy,idle:Math.random()*4,flying:false,flyH:0,bc:Math.floor(Math.random()*3)});
     }
   }
 }
@@ -3294,78 +3404,26 @@ function updWildlife(d){
 function dWildlife_single(w){
     const sx=(w.x-smCam.x)*T*SC,sy=(w.y-smCam.y)*T*SC-(w.flyH||0)*T*SC;
     if(sx<-40*SC||sy<-40*SC||sx>CV.width+40*SC||sy>CV.height+40*SC)return;
-    // Shadow
+    // Shadow at ground level
     X.fillStyle='rgba(0,0,0,0.15)';X.beginPath();X.ellipse(sx,(w.y-smCam.y)*T*SC+8*SC,8*SC,3*SC,0,0,Math.PI*2);X.fill();
     const fr=Math.floor(w.wa)%2;
+    let key,dx,dy;
     if(w.tp==='deer'){
-      // Body
-      X.fillStyle=w.fleeing?'#b07040':'#c08850';
-      X.fillRect(sx-8*SC,sy-10*SC,16*SC,10*SC);
-      // Legs
-      const legOff=fr*2-1;
-      X.fillStyle='#8a6535';
-      X.fillRect(sx-6*SC,sy,2*SC,6*SC+legOff*SC);
-      X.fillRect(sx+4*SC,sy,2*SC,6*SC-legOff*SC);
-      // Head
-      X.fillStyle='#c08850';
-      const hd2=[[0,-1],[1,0],[0,1],[-1,0]][w.f];
-      X.fillRect(sx+hd2[0]*10*SC-3*SC,sy-12*SC+hd2[1]*4*SC,6*SC,6*SC);
-      // Antlers
-      X.fillStyle='#a08060';
-      X.fillRect(sx+hd2[0]*10*SC-4*SC,sy-16*SC+hd2[1]*4*SC,2*SC,4*SC);
-      X.fillRect(sx+hd2[0]*10*SC+2*SC,sy-16*SC+hd2[1]*4*SC,2*SC,4*SC);
-      // Eye
-      X.fillStyle='#222';px(X,sx+hd2[0]*11*SC,sy-10*SC+hd2[1]*4*SC,'#222');
-      // White tail
-      if(w.fleeing){X.fillStyle='#fff';X.fillRect(sx-hd2[0]*9*SC-2*SC,sy-8*SC,4*SC,3*SC)}
+      key='deer'+fr;dx=sx-16*SC;dy=sy-18*SC;
     }else if(w.tp==='rabbit'){
-      // Body
-      X.fillStyle=w.fleeing?'#b8a080':'#cbb898';
-      X.fillRect(sx-4*SC,sy-5*SC,8*SC,6*SC);
-      // Ears
-      X.fillStyle='#d0c0a0';
-      X.fillRect(sx-3*SC,sy-10*SC,2*SC,5*SC);
-      X.fillRect(sx+1*SC,sy-10*SC,2*SC,5*SC);
-      // Inner ear
-      X.fillStyle='#e8a0a0';
-      px(X,sx-2*SC,sy-8*SC,'#e8a0a0');px(X,sx+2*SC,sy-8*SC,'#e8a0a0');
-      // Legs (hop animation)
-      X.fillStyle='#b0a080';
-      if(w.fleeing||Math.abs(w.vx)+Math.abs(w.vy)>.5){
-        X.fillRect(sx-3*SC,sy+SC+fr*3*SC,2*SC,3*SC);
-        X.fillRect(sx+1*SC,sy+SC-fr*3*SC+3*SC,2*SC,3*SC);
-      }else{
-        X.fillRect(sx-3*SC,sy+SC,2*SC,3*SC);
-        X.fillRect(sx+1*SC,sy+SC,2*SC,3*SC);
-      }
-      // Eye & nose
-      X.fillStyle='#333';px(X,sx-2*SC,sy-5*SC,'#333');
-      X.fillStyle='#e8a0a0';px(X,sx,sy-4*SC,'#e8a0a0');
-      // Cotton tail
-      X.fillStyle='#fff';X.fillRect(sx-1*SC,sy,2*SC,2*SC);
+      key='rab'+fr;dx=sx-10*SC;dy=sy-7*SC;
     }else if(w.tp==='bird'){
-      // Body
-      const bc=Math.floor(w.x*3+w.y*7)%3;
-      const birdCol=['#4a7a9a','#8a5a3a','#3a6a4a'][bc];
-      X.fillStyle=birdCol;
-      X.fillRect(sx-3*SC,sy-3*SC,6*SC,4*SC);
-      // Wings
-      if(w.flying||w.fleeing){
-        const wingUp=Math.sin(w.wa*4)*4;
-        X.fillStyle=birdCol;
-        X.fillRect(sx-7*SC,sy-3*SC+wingUp*SC,4*SC,2*SC);
-        X.fillRect(sx+3*SC,sy-3*SC-wingUp*SC,4*SC,2*SC);
-      }else{
-        X.fillStyle=birdCol;
-        X.fillRect(sx-5*SC,sy-2*SC,2*SC,2*SC);
-        X.fillRect(sx+3*SC,sy-2*SC,2*SC,2*SC);
-      }
-      // Beak
-      const bd=[[0,-1],[1,0],[0,1],[-1,0]][w.f];
-      X.fillStyle='#e8a030';
-      X.fillRect(sx+bd[0]*4*SC,sy-2*SC+bd[1]*2*SC,2*SC,1*SC);
-      // Eye
-      X.fillStyle='#111';px(X,sx+bd[0]*2*SC,sy-3*SC,'#111');
+      const bc=w.bc!==undefined?w.bc:Math.floor(w.x*3+w.y*7)%3;
+      key=`bird${bc}_${fr}`;dx=sx-9*SC;dy=sy-3*SC;
+    }
+    const s=_s[key];if(!s)return;
+    const hd=s._hd||1,dw=s.width/hd*SC,dh=s.height/hd*SC;
+    if(w.f===3){
+      X.save();X.scale(-1,1);
+      X.drawImage(s,0,0,s.width,s.height,-dx-dw,dy,dw,dh);
+      X.restore();
+    }else{
+      X.drawImage(s,0,0,s.width,s.height,dx,dy,dw,dh);
     }
 }
 
