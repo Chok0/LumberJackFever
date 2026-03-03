@@ -3879,7 +3879,8 @@ function genMap(){
 function isT(t){return !!ESS[t]}
 function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
-function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
+function isS(t){return isT(t)||t===TT.WA||t===TT.RK||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
+function isPlayerBlocked(t){return isS(t)&&t!==TT.BARR}
 
 // Flood-fill to find contiguous stump cluster (8-connected)
 function findStumpCluster(sx,sy){
@@ -4656,8 +4657,8 @@ function updP2(d){
   if(K.KeyC&&P.sta>20&&P.dc<=0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult;P.sta-=TUNING.dashStaCost*d;P.dt=.15}
   if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
-  if(nx>=.3&&nx<MW-.3&&!isS(map[Math.floor(P.y)][Math.floor(nx)]))P.x=nx;
-  if(ny>=.3&&ny<MH-.3&&!isS(map[Math.floor(ny)][Math.floor(P.x)]))P.y=ny;
+  if(nx>=.3&&nx<MW-.3&&!isPlayerBlocked(map[Math.floor(P.y)][Math.floor(nx)]))P.x=nx;
+  if(ny>=.3&&ny<MH-.3&&!isPlayerBlocked(map[Math.floor(ny)][Math.floor(P.x)]))P.y=ny;
   // Auto-collect herbs & mushrooms
   const ptx=Math.floor(P.x),pty=Math.floor(P.y);
   const ptile=map[pty]?.[ptx];
@@ -4698,7 +4699,7 @@ function updP2(d){
       }
       // Move player forward
       const fnx=P.x+ddx*3,fny=P.y+ddy*3;
-      if(fnx>=.3&&fnx<MW-.3&&fny>=.3&&fny<MH-.3&&!isS(map[Math.floor(fny)][Math.floor(fnx)])){P.x=fnx;P.y=fny}
+      if(fnx>=.3&&fnx<MW-.3&&fny>=.3&&fny<MH-.3&&!isPlayerBlocked(map[Math.floor(fny)][Math.floor(fnx)])){P.x=fnx;P.y=fny}
       shake=.25;ft2(P.x,P.y-1,'💨 Dash!','#cc8844');
     }else{
       // NORMAL ATTACK: hit in facing direction
@@ -7042,7 +7043,7 @@ function updVilUnrest(d){
   // Barricades physically block mobs: push away mobs that hit barricade tiles
   for(const e of ents){
     const etx=Math.floor(e.x),ety=Math.floor(e.y);
-    if(etx>=0&&ety>=0&&etx<MW&&ety<MH&&map[ety][etx]===TT.VIL_BARRICADE){
+    if(etx>=0&&ety>=0&&etx<MW&&ety<MH&&(map[ety][etx]===TT.VIL_BARRICADE||map[ety][etx]===TT.BARR)){
       // Push mob north (away from village)
       e.y-=1.5;e.hp-=1; // barricades damage mobs slightly
       sp(e.x,e.y,'#8a6a3a',5);
