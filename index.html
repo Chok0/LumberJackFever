@@ -71,13 +71,13 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <script>
 // ============ TUNING SYSTEM ============
 const TUNING = {
-  // -- Corruption (aggressive: visible <1min, dangerous at 5min) --
-  corrMinCluster: 3,
-  corrSpreadRate: 0.018,     // very fast spread
-  corrSpreadRadius: 4,
-  corrPassiveGrowth: 0.000003,
-  corrDensityRadius: 3,
-  corrDensityThreshold: 0.08,
+  // -- Corruption (gradual: visible ~3min, dangerous ~10min) --
+  corrMinCluster: 5,             // need 5 adjacent stumps (was 3)
+  corrSpreadRate: 0.004,         // slow spread (was 0.018)
+  corrSpreadRadius: 3,           // tighter radius (was 4)
+  corrPassiveGrowth: 0.0000008,  // slower passive growth (was 0.000003)
+  corrDensityRadius: 5,          // larger check area — sparse cutting forgiven (was 3)
+  corrDensityThreshold: 0.15,    // need 15% stumps in area to trigger (was 0.08)
   // -- Player --
   playerBaseHp: 5,
   playerBaseStamina: 100,
@@ -90,7 +90,7 @@ const TUNING = {
   // -- Axe Durability --
   axeBaseDur: 50,           // base durability (hits)
   axeDurPerLevel: 25,       // +dur per axe level
-  axeRepairCost: 15,        // gold to repair
+  axeRepairCost: 5,         // gold to repair (was 15)
   // -- Economy --
   baseBagSize: 30,
   bagUpgradeAmount: 15,
@@ -136,9 +136,6 @@ const TUNING = {
   contractTimeLimit: 120,
   contractBonusMult: 2.0,
   contractLatePenalty: 0.5,
-  contractCooldown: 45,
-  contractMinAmount: 3,
-  contractMaxAmount: 8,
   // -- Herbs & Mushrooms --
   herbsForPotions: 5,
   mushsForEncens: 5,
@@ -148,9 +145,9 @@ const TUNING = {
 const TUNING_DEFAULT = JSON.parse(JSON.stringify(TUNING));
 const TUNING_META = {
   'corrMinCluster': {min:2,max:12,step:1,cat:'Corruption',label:'Seuil cluster (stumps)'},
-  'corrSpreadRate': {min:0.0005,max:0.01,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
-  'corrSpreadRadius': {min:1,max:5,step:0.5,cat:'Corruption',label:'Rayon propagation'},
-  'corrPassiveGrowth': {min:0,max:0.000002,step:0.0000001,cat:'Corruption',label:'Croissance passive'},
+  'corrSpreadRate': {min:0.0005,max:0.02,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
+  'corrSpreadRadius': {min:1,max:6,step:0.5,cat:'Corruption',label:'Rayon propagation'},
+  'corrPassiveGrowth': {min:0,max:0.000005,step:0.0000001,cat:'Corruption',label:'Croissance passive'},
   'corrDensityRadius': {min:2,max:8,step:1,cat:'Corruption',label:'Rayon densité check'},
   'corrDensityThreshold': {min:0.05,max:0.5,step:0.01,cat:'Corruption',label:'Seuil densité (ratio)'},
   'playerBaseHp': {min:1,max:20,step:1,cat:'Joueur',label:'PV de base'},
@@ -189,9 +186,6 @@ const TUNING_META = {
   'contractTimeLimit': {min:60,max:600,step:30,cat:'Contrats',label:'Temps limite (s)'},
   'contractBonusMult': {min:1.2,max:4,step:0.2,cat:'Contrats',label:'Bonus prix (×)'},
   'contractLatePenalty': {min:0.1,max:0.9,step:0.1,cat:'Contrats',label:'Pénalité retard (×)'},
-  'contractCooldown': {min:10,max:180,step:10,cat:'Contrats',label:'Cooldown nouveau contrat'},
-  'contractMinAmount': {min:2,max:10,step:1,cat:'Contrats',label:'Quantité min'},
-  'contractMaxAmount': {min:5,max:25,step:1,cat:'Contrats',label:'Quantité max'},
 };
 let editorOpen = false;
 
@@ -334,7 +328,7 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   chestWood:0,chestSap:0, // stored in house chest
   woodByType:{}, // track wood per essence: {tileType: count}
   _contract:null, // {type,name,amount,pricePerUnit,deadline,acceptedAt}
-  _contractCooldown:0, // time until next contract available
+  _contractsDone:0, // contracts completed — drives progression
   _sacredLore:[], // IDs of lore fragments already read
   _introSeen:false, // has seen intro cinematic
   _grandparentTalked:0, // times talked to grandparent
@@ -364,8 +358,127 @@ function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap}
 function invFree(){return P.invCap-invUsed()}
 let cam={x:0,y:0},smCam={x:0,y:0};
 const K={};
-document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR'].includes(e.code)&&e.preventDefault();if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()}});
+document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()}});
 document.addEventListener('keyup',e=>{K[e.code]=false});
+
+// ============ AUDIO SYSTEM (8-bit chiptune) ============
+let _actx=null,_musicOn=true,_sfxOn=true,_musicVol=.25,_sfxVol=.4;
+let _musicGain=null,_sfxGain=null;
+function initAudio(){
+  if(_actx)return;
+  _actx=new(window.AudioContext||window.webkitAudioContext)();
+  _musicGain=_actx.createGain();_musicGain.gain.value=_musicVol;_musicGain.connect(_actx.destination);
+  _sfxGain=_actx.createGain();_sfxGain.gain.value=_sfxVol;_sfxGain.connect(_actx.destination);
+}
+// --- SFX primitives ---
+function sfxNote(freq,dur,type,vol,delay){
+  if(!_actx||!_sfxOn)return;
+  const t=_actx.currentTime+(delay||0);
+  const o=_actx.createOscillator(),g=_actx.createGain();
+  o.type=type||'square';o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime((vol||1)*_sfxVol,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  o.connect(g);g.connect(_sfxGain);
+  o.start(t);o.stop(t+dur);
+  o.onended=()=>{o.disconnect();g.disconnect()};
+}
+function sfxNoise(dur,vol,delay){
+  if(!_actx||!_sfxOn)return;
+  const t=_actx.currentTime+(delay||0);
+  const buf=_actx.createBuffer(1,Math.floor(_actx.sampleRate*dur),_actx.sampleRate);
+  const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(vol||.3);
+  const src=_actx.createBufferSource(),g=_actx.createGain();
+  src.buffer=buf;g.gain.setValueAtTime((vol||.3)*_sfxVol,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  src.connect(g);g.connect(_sfxGain);
+  src.start(t);src.stop(t+dur);
+  src.onended=()=>{src.disconnect();g.disconnect()};
+}
+// --- SFX library ---
+function sfxChop(){sfxNote(220,.06,'square',.5);sfxNoise(.08,.25,.02);sfxNote(165,.04,'square',.3,.06)}
+function sfxTreeFall(){sfxNote(180,.1,'sawtooth',.4);sfxNote(120,.15,'sawtooth',.3,.08);sfxNote(80,.2,'sawtooth',.25,.18);sfxNoise(.25,.2,.3)}
+function sfxPickup(){sfxNote(523,.06,'square',.3);sfxNote(659,.06,'square',.3,.06);sfxNote(784,.1,'square',.35,.12)}
+function sfxSell(){sfxNote(440,.05,'triangle',.3);sfxNote(554,.05,'triangle',.3,.06);sfxNote(659,.05,'triangle',.3,.12);sfxNote(880,.12,'triangle',.35,.18)}
+function sfxHit(){sfxNote(120,.05,'sawtooth',.5);sfxNoise(.06,.3,.03);sfxNote(90,.08,'square',.3,.05)}
+function sfxPlayerHurt(){sfxNote(260,.08,'square',.4);sfxNote(200,.12,'square',.35,.06);sfxNote(150,.15,'sawtooth',.3,.14)}
+function sfxDeath(){sfxNote(300,.12,'square',.4);sfxNote(250,.12,'square',.35,.12);sfxNote(200,.15,'square',.3,.24);sfxNote(150,.2,'sawtooth',.25,.38)}
+function sfxShop(){sfxNote(330,.08,'triangle',.25);sfxNote(392,.08,'triangle',.25,.08);sfxNote(494,.12,'triangle',.3,.16)}
+function sfxMenuSelect(){sfxNote(660,.04,'square',.2);sfxNote(880,.06,'square',.25,.04)}
+function sfxCorruption(){sfxNote(80,.3,'sawtooth',.15);sfxNote(95,.25,'sawtooth',.12,.1);sfxNote(60,.35,'sawtooth',.1,.2)}
+function sfxPurify(){sfxNote(392,.1,'triangle',.3);sfxNote(494,.1,'triangle',.3,.1);sfxNote(587,.1,'triangle',.3,.2);sfxNote(784,.15,'triangle',.35,.3)}
+function sfxWolf(){sfxNote(200,.15,'sawtooth',.25);sfxNote(250,.2,'sawtooth',.3,.12);sfxNote(220,.25,'sawtooth',.2,.3)}
+function sfxFootstep(){sfxNoise(.03,.08);sfxNote(100+Math.random()*30,.02,'square',.06,.01)}
+function sfxLore(){sfxNote(440,.12,'triangle',.2);sfxNote(554,.12,'triangle',.25,.1);sfxNote(659,.15,'triangle',.3,.22);sfxNote(880,.2,'triangle',.2,.36)}
+function sfxContract(){sfxNote(330,.06,'square',.2);sfxNote(440,.06,'square',.25,.06);sfxNote(554,.08,'square',.3,.12);sfxNote(660,.1,'triangle',.3,.2)}
+
+// --- MUSIC ENGINE (8-bit folk/Nordic loop) ---
+let _musicPlaying=false,_musicTimer=null;
+const NOTE_FREQ={C3:131,D3:147,E3:165,F3:175,G3:196,A3:220,B3:247,
+  C4:262,D4:294,E4:330,F4:349,G4:392,A4:440,B4:494,
+  C5:523,D5:587,E5:659,F5:698,G5:784,A5:880,R:0};
+function playMusicNote(freq,dur,type,vol){
+  if(!_actx||!_musicOn||freq===0)return;
+  const t=_actx.currentTime;
+  const o=_actx.createOscillator(),g=_actx.createGain();
+  o.type=type||'square';o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime((vol||.12)*_musicVol,t);
+  g.gain.setValueAtTime((vol||.12)*_musicVol,t+dur*.7);
+  g.gain.linearRampToValueAtTime(0,t+dur*.95);
+  o.connect(g);g.connect(_musicGain);
+  o.start(t);o.stop(t+dur);
+  o.onended=()=>{o.disconnect();g.disconnect()};
+}
+// Melody: Nordic folk feel in A minor, 4/4 time
+const MELODY=[
+  'A3','C4','E4','C4', 'A3','C4','E4','G4',
+  'F4','E4','D4','C4', 'D4','E4','C4','R',
+  'A3','C4','E4','A4', 'G4','E4','D4','C4',
+  'D4','F4','E4','D4', 'C4','D4','C4','A3',
+  'E4','G4','A4','G4', 'E4','D4','C4','D4',
+  'A3','B3','C4','E4', 'D4','C4','A3','R',
+  'C4','E4','G4','E4', 'F4','E4','D4','C4',
+  'A3','C4','D4','E4', 'C4','A3','A3','R',
+];
+// Bass line (root notes, longer)
+const BASS=[
+  'A3','A3','A3','A3', 'A3','A3','A3','A3',
+  'F3','F3','F3','F3', 'G3','G3','C3','C3',
+  'A3','A3','A3','A3', 'C3','C3','G3','G3',
+  'D3','D3','E3','E3', 'A3','A3','A3','A3',
+  'E3','E3','E3','E3', 'F3','F3','G3','G3',
+  'A3','A3','A3','A3', 'D3','D3','A3','A3',
+  'C3','C3','E3','E3', 'F3','F3','G3','G3',
+  'A3','A3','D3','D3', 'A3','A3','A3','A3',
+];
+let _mStep=0;
+const BPM=110,BEAT=60/BPM;
+function musicTick(){
+  if(!_actx||!_musicOn||!_musicPlaying)return;
+  const nLen=BEAT*.5; // eighth notes
+  // Melody
+  const mNote=MELODY[_mStep%MELODY.length];
+  if(mNote!=='R') playMusicNote(NOTE_FREQ[mNote],nLen*.9,'square',.14);
+  // Bass (every 2 melody notes)
+  if(_mStep%2===0){
+    const bNote=BASS[(_mStep/2|0)%BASS.length];
+    if(bNote!=='R') playMusicNote(NOTE_FREQ[bNote],nLen*1.8,'triangle',.1);
+  }
+  // Light percussion every 4 notes
+  if(_mStep%4===0) sfxNoise(.02,.04);
+  if(_mStep%4===2) sfxNoise(.015,.02);
+  _mStep++;
+  _musicTimer=setTimeout(musicTick,nLen*1000);
+}
+function startMusic(){
+  if(_musicPlaying)return;
+  initAudio();_musicPlaying=true;_mStep=0;musicTick();
+}
+function stopMusic(){_musicPlaying=false;if(_musicTimer){clearTimeout(_musicTimer);_musicTimer=null}}
+function toggleMusic(){if(_musicPlaying)stopMusic();else startMusic();return _musicPlaying}
+function toggleSfx(){_sfxOn=!_sfxOn;return _sfxOn}
+// Init audio on first user interaction
+document.addEventListener('click',()=>{initAudio();startMusic()},{once:true});
+document.addEventListener('keydown',()=>{initAudio();if(!_musicPlaying)startMusic()},{once:true});
 
 // ============ SPRITE SYSTEM ============
 const _s={};
@@ -2597,9 +2710,9 @@ function getDialogue(npcType){
     const hasRare=Object.keys(rareCount).some(k=>{
       const ess2=ESS[parseInt(k)];return ess2&&ess2.rare});
     if(v===0){
-      lines.push("Bonjour ! Estelle, luthier. J'ai install\u00e9 mon atelier ici.");
+      lines.push("Oh ! Un visiteur... Estelle, luthier. Je me suis install\u00e9e ici, loin du bruit.");
       lines.push("Je fabrique des instruments de musique \u2014 violons, guitares, luths...");
-      lines.push("Mais j'ai besoin de bois sp\u00e9ciaux. Des bois rares, avec une \u00e2me.");
+      lines.push("La for\u00eat me donne tout ce qu'il faut. Mais j'ai besoin de bois sp\u00e9ciaux, rares.");
       lines.push("\u00c9b\u00e8ne, Palissandre, Bois de Rose dans le mar\u00e9cage \u00e0 l'est...");
       lines.push("\u00c9pic\u00e9a de r\u00e9sonance dans les for\u00eats bor\u00e9ales \u00e0 l'ouest...");
       lines.push("Et le mythique \u00c9rable ond\u00e9, cach\u00e9 dans la for\u00eat mixte.");
@@ -3026,9 +3139,16 @@ function genMap(){
   map[bossWY][bossWX]=TT.RK;
   window._bossWest={x:bossWX,y:bossWY};
 
-  // === Luthier in village ===
-  const luthX=CX-8, luthY=MH-12+7;
-  if(luthY<MH&&luthX>0) map[luthY][luthX]=TT.LUTH;
+  // === Luthier: hidden in a lisière clearing (ermite) ===
+  const luthX=Math.floor(20+n2(70,50,seed+970)*88);
+  const luthY=Math.floor(B_MIX+6+n2(70,51,seed+971)*(VIL_Y-B_MIX-18));
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const nx=luthX+dx,ny=luthY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.LUTH;
+      else map[ny][nx]=TT.G;
+    }
+  }
 
     // === HERMIT HUTS: One per deep biome ===
   const hermitPositions = [];
@@ -3124,7 +3244,7 @@ function checkCorrTrigger(tx,ty){
         }
       });
       shake=.4;
-      ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');
+      ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');sfxCorruption();
     }
   }
 }
@@ -3199,9 +3319,10 @@ function spawnE(){
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
-function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){P.hp-=e.dmg;P.iv=1;P.ht=.3;shake=.5;sp(P.x,P.y,'#e74c3c',8);if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
+function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
+function hurtP(dmg,iv,ht,shk,col,n){P.hp-=dmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}}
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
   for(let i=fts.length-1;i>=0;i--){fts[i].y-=d*1.5;fts[i].l-=d;if(fts[i].l<=0)fts.splice(i,1)}
@@ -3467,7 +3588,7 @@ function spawnWolves(){
     _wolfSpawnT=gt+TUNING.wolfSpawnCooldown;
     // Howl notification if nearby
     if(dist<18){
-      ft2(P.x,P.y-1.5,'🐺 Hurlement dans la nuit...','#b0b0c0');
+      ft2(P.x,P.y-1.5,'🐺 Hurlement dans la nuit...','#b0b0c0');sfxWolf();
     }
     break;
   }
@@ -3521,8 +3642,7 @@ function updWolves(d){
     }
     // Damage player on contact
     if(di<.8&&P.iv<=0){
-      P.hp-=w.dmg;P.iv=.8;P.ht=.3;shake=.4;sp(P.x,P.y,'#8888aa',6);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+      hurtP(w.dmg,.8,.3,.4,'#8888aa',6);
     }
     // Death
     if(w.hp<=0){
@@ -3607,7 +3727,7 @@ function updP2(d){
         if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.TJ){
           const lore=getSacredLore(nx2,ny2);
           if(lore){
-            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
+            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
             shopOn=true;curShop='SACRED';
             document.getElementById('shp').style.display='block';
             document.querySelector('#shp h2').textContent='🌳 Arbre Sacré';
@@ -3638,7 +3758,7 @@ function updP2(d){
         }
       }
       // Then check for buildings
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
     }
   }
   // Inventory toggle (I key)
@@ -3653,24 +3773,24 @@ function updP2(d){
   if(mx&&my){mx*=.707;my*=.707}
   let spd=P.spd;P.dt=Math.max(0,P.dt-d);P.dc=Math.max(0,P.dc-d);
   if(K.KeyC&&P.sta>20&&P.dc<=0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult;P.sta-=TUNING.dashStaCost*d;P.dt=.15}
-  if(mx||my)P.wa+=d*10;else P.wa=0;
+  if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
   if(nx>=.3&&nx<MW-.3&&!isS(map[Math.floor(P.y)][Math.floor(nx)]))P.x=nx;
   if(ny>=.3&&ny<MH-.3&&!isS(map[Math.floor(ny)][Math.floor(P.x)]))P.y=ny;
   // Auto-collect herbs & mushrooms
   const ptx=Math.floor(P.x),pty=Math.floor(P.y);
   const ptile=map[pty]?.[ptx];
-  if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);}
-  if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);}
+  if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);sfxPickup();}
+  if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);sfxPickup();}
   const staRegen=TUNING.staRegen*(P._encens&&gt<P._encens?2:1);
   P.sta=Math.min(P.msta,P.sta+staRegen*d);P.ct=Math.max(0,P.ct-d);P.iv=Math.max(0,P.iv-d);P.ht=Math.max(0,P.ht-d);P.sw=Math.max(0,P.sw-d*10);
   if(K.Space&&P.ct<=0&&P.sta>TUNING.cutStaCost){
-    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;
+    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;sfxChop();
     // Scare wildlife on cut
     wildlife.forEach(w=>{const dx2=w.x-P.x,dy2=w.y-P.y;if(Math.sqrt(dx2*dx2+dy2*dy2)<TUNING.wildlifeNoiseFleeRadius){w.fleeing=true;w.fleeT=3+Math.random()*2;w.fleeX=w.x+(dx2>0?1:-1)*(8+Math.random()*6);w.fleeY=w.y+(dy2>0?1:-1)*(8+Math.random()*6)}});
     const dirs=[[0,-1],[1,0],[0,1],[-1,0]],dd=dirs[P.f];
     const tx=Math.floor(P.x+dd[0]),ty=Math.floor(P.y+dd[1]);
-    ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5)}});
+    ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5);sfxHit()}});
     wolves.forEach(w=>{const wx2=w.x-(P.x+dd[0]*.5),wy2=w.y-(P.y+dd[1]*.5);if(Math.sqrt(wx2*wx2+wy2*wy2)<1.5){w.hp-=P.pow;w.ht=.2;shake=.15;sp(w.x,w.y,'#aaaacc',5)}});
     // Lateral boss hit detection
     if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100}}}
@@ -3711,19 +3831,15 @@ function updP2(d){
         shake=.15;sp(tx+.5,ty+.5,'#aaa',3);
         return; // bounce — can't even damage it
       }
-      // Axe durability check
-      if(P._axeDur<=0){
-        ft2(P.x,P.y-.5,'🪓 Hache émoussée !','#e74c3c');
-        ft2(P.x,P.y-1,'Réparer chez le Forgeron','#e9c46a');
-        shake=.1;
-        return;
-      }
-      P._axeDur=Math.max(0,P._axeDur-1); // consume durability
+      // Axe durability — dull axe does half damage, doesn't block
+      const isDull=P._axeDur<=0;
+      if(!isDull) P._axeDur=Math.max(0,P._axeDur-1);
+      if(isDull&&Math.random()<.15) ft2(P.x,P.y-.5,'🪓 Émoussée...','#e9c46a');
       if(P._axeDur<=Math.floor(P._axeMaxDur*0.2)&&P._axeDur>0&&P._axeDur%5===0){
         ft2(P.x,P.y-1,'⚠️ Hache fragile !','#e9c46a');
       }
       const need=ess.hp;
-      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=P.pow;
+      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/2)):P.pow;
       sp(tx+.5,ty+.5,'#8B6914',4);shake=.07;
       // Show name on first hit
       if(_th[hk]===P.pow)ft2(tx+.5,ty-.5,ess.name,'#b7e4c7');
@@ -3737,7 +3853,7 @@ function updP2(d){
           ft2(tx+.3,ty-.3,toAdd<=0?`🪵${w} perdu!`:`(${lost} perdu)`,'#e74c3c');
         }
         if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
-        map[ty][tx]=TT.ST;delete _th[hk];cuts++;
+        map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();
         // Track first corruption trigger
         checkCorrTrigger(tx,ty);
         sp(tx+.5,ty+.5,'#52b788',10);sp(tx+.5,ty+.3,'#c9a86c',8);shake=.3;
@@ -3774,35 +3890,56 @@ const CONTRACT_ZONES={
   [TT.PET]:'la forêt primordiale — bois pétrifié rare',
 };
 function generateContract(){
-  // Progressive: many tiers, tutorial first contract, scaling rewards
-  let pool, timeBonus=0, amountMod=0;
-  if(cuts===0){
-    // TUTORIAL contract: first time, easy and guided
-    pool=[TT.NOI]; amountMod=-1; timeBonus=60;
-  }else if(cuts < 5) {pool=[TT.NOI,TT.NOI,TT.AUL]; amountMod=-1; timeBonus=30;}
-  else if(cuts < 12) pool=[TT.NOI,TT.AUL,TT.BOU]; // still lisière easy
-  else if(cuts < 25) pool=[TT.AUL,TT.BOU,TT.BOU,TT.ERA]; // push into lisière
-  else if(cuts < 40) pool=[TT.BOU,TT.ERA,TT.ERA,TT.AUL]; // deeper lisière
-  else if(cuts < 60) pool=[TT.ERA,TT.PIN,TT.BOU,TT.FRE]; // transition
-  else if(cuts < 85) pool=[TT.PIN,TT.FRE,TT.CHE,TT.HET]; // forêt mixte
-  else if(cuts < 110) pool=[TT.CHE,TT.HET,TT.IFS,TT.TIL,TT.FRE]; // ancienne transition
-  else if(cuts < 150) pool=[TT.IFS,TT.TIL,TT.CHE,TT.HET]; // forêt ancienne
-  else pool=[TT.IFS,TT.TIL,TT.SEQ,TT.PET,TT.HET]; // primordiale
-  const type=pool[Math.floor(Math.random()*pool.length)];
+  // Progression by contracts completed — volumes force upgrades, types push deeper
+  const ci=P._contractsDone||0;
+  let type, amount, timeBonus=0;
+  // === PHASE 1: Noisetier — learn, then grind (bag 30 → 45) ===
+  if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial
+  }else if(ci===1){ type=TT.NOI; amount=8;
+  }else if(ci===2){ type=TT.NOI; amount=15;
+  }else if(ci===3){ type=TT.NOI; amount=20; // fills base bag (30)
+  }else if(ci===4){ type=TT.AUL; amount=12; // variety
+  }else if(ci===5){ type=TT.NOI; amount=40; // forces bag upgrade 30→45
+  // === PHASE 2: Bouleau — clear-cutting begins, corruption ===
+  }else if(ci===6){ type=TT.BOU; amount=15;
+  }else if(ci===7){ type=TT.BOU; amount=25;
+  }else if(ci===8){ type=TT.BOU; amount=40; // forces bag upgrade 45→60
+  }else if(ci===9){ type=TT.AUL; amount=30; // breathing room
+  // === PHASE 3: Érable — push deeper into lisière ===
+  }else if(ci===10){ type=TT.ERA; amount=12;
+  }else if(ci===11){ type=TT.ERA; amount=20;
+  }else if(ci===12){ type=TT.ERA; amount=35;
+  // === PHASE 4: Pin/Frêne — transition, push toward mixte ===
+  }else if(ci===13){ type=TT.PIN; amount=10;
+  }else if(ci===14){ type=TT.FRE; amount=15;
+  }else if(ci===15){ type=TT.PIN; amount=25;
+  // === PHASE 5: Chêne/Hêtre — forêt mixte (needs axe 2) ===
+  }else if(ci===16){ type=TT.CHE; amount=10;
+  }else if(ci===17){ type=TT.HET; amount=15;
+  }else if(ci===18){ type=TT.CHE; amount=25;
+  }else if(ci===19){ type=TT.HET; amount=30;
+  // === PHASE 6: Forêt ancienne (needs axe 3) ===
+  }else if(ci===20){ type=TT.IFS; amount=8;
+  }else if(ci===21){ type=TT.TIL; amount=12;
+  }else if(ci===22){ type=TT.IFS; amount=20;
+  // === PHASE 7+: Primordiale rotation ===
+  }else{
+    const pool=[TT.IFS,TT.TIL,TT.SEQ,TT.PET,TT.HET];
+    type=pool[ci%pool.length];
+    amount=8+Math.floor((ci-22)*1.5);
+  }
   const ess=ESS[type];
   if(!ess)return;
-  const baseAmount=TUNING.contractMinAmount+Math.floor(Math.random()*(TUNING.contractMaxAmount-TUNING.contractMinAmount+1));
-  const amount=Math.max(1,baseAmount+amountMod);
-  const pricePerUnit=ess.gold+Math.ceil(ess.gold*(0.5+cuts*0.005)); // scaling reward
+  const pricePerUnit=ess.gold+Math.ceil(ess.gold*(0.3+ci*0.03));
   P._contract={
     type,
     name:ess.name,
     amount,
     pricePerUnit,
-    deadline:gt+TUNING.contractTimeLimit+timeBonus,
+    deadline:gt+TUNING.contractTimeLimit+timeBonus+Math.min(amount*8,300),
     acceptedAt:gt,
     zone:CONTRACT_ZONES[type]||'la forêt',
-    isTutorial:cuts===0,
+    isTutorial:ci===0,
   };
 }
 
@@ -3931,13 +4068,13 @@ function updShop(){
     }else if(t===TT.EMIS){
     // Émissaire: sell wood, contracts, loans
     // Generate new contract if none active and cooldown expired
-    if(!P._contract && gt > P._contractCooldown) generateContract();
+    if(!P._contract) generateContract();
     
     const baseVal=P.wv||0;
     items=[];
     
     // 1. Basic sell — always available
-    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
+    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;sfxSell();ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
     
     // 2. Contract — timed specific wood request
     if(P._contract){
@@ -3966,21 +4103,20 @@ function updShop(){
           P.wv=Math.max(0,(P.wv||0)-delivered*(ess?.gold||1));
           ft2(P.x,P.y,`💰+${pay}`,'#DAA520');
           if(delivered>=ct.amount){
-            ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');
+            ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
             P._contract=null;
-            P._contractCooldown=gt+TUNING.contractCooldown;
+            P._contractsDone=(P._contractsDone||0)+1;
+            generateContract(); // new contract immediately
           }else{
             ct.amount-=delivered;
             ft2(P.x,P.y-1,`📜 Reste: ${ct.amount}×${ct.name}`,'#e9c46a');
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;P._contractCooldown=gt+TUNING.contractCooldown*0.5;ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
-    }else if(gt < P._contractCooldown){
-      const wait=Math.ceil(P._contractCooldown-gt);
-      items.push({n:`📜 Prochain contrat dans ${wait}s...`,c:9999,a:()=>{}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;generateContract();ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
     }else{
-      items.push({n:'📜 Nouveau contrat disponible (revenez)',c:9999,a:()=>{}});
+      // No contract — generate immediately
+      generateContract();
     }
     
     // 3. Loan
@@ -4051,7 +4187,7 @@ function updShop(){
     else if(isContract)lbl='Signer';
     else lbl=it.c>=9999?'—':it.c+' or';
     d2.innerHTML=`<span>${it.n}</span><button class="sb" ${ok?'':'disabled'}>${lbl}</button>`;
-    d2.querySelector('button').onclick=()=>{if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell)P.g-=it.c;it.a();updShop()};
+    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell)P.g-=it.c;it.a();updShop()};
     co.appendChild(d2);
   });
 }
@@ -4690,8 +4826,7 @@ function updBossEast(d){
   }
   // Melee damage if too close
   if(dist<2 && P.iv<=0){
-    P.hp-=b.dmg;P.iv=1;P.ht=.3;shake=.6;sp(P.x,P.y,'#2a6a4a',8);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    hurtP(b.dmg,1,.3,.6,'#2a6a4a',8);
   }
 }
 
@@ -4765,8 +4900,7 @@ function updBossWest(d){
     b.chargeDist+=12*d;
     if(b.chargeDist>8){b.charging=false;shake=.3;sp(b.x,b.y,'#6a4a2a',6)}
     if(dist<1.5 && P.iv<=0){
-      P.hp-=b.dmg+2;P.iv=1.2;P.ht=.4;shake=1;sp(P.x,P.y,'#8a4a1a',12);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+      hurtP(b.dmg+2,1.2,.4,1,'#8a4a1a',12);
     }
     return;
   }
@@ -4792,8 +4926,7 @@ function updBossWest(d){
   }
   // Melee
   if(dist<1.5 && P.iv<=0 && !b.charging){
-    P.hp-=b.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8a4a1a',8);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    hurtP(b.dmg,.8,.3,.5,'#8a4a1a',8);
   }
 }
 
@@ -4907,9 +5040,7 @@ function updGuardian(d){
   
   // Melee damage
   if(dist<1.2 && P.iv<=0){
-    P.hp-=g.dmg;P.iv=1.2;P.ht=.4;shake=.8;
-    sp(P.x,P.y,'#8b0000',10);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    hurtP(g.dmg,1.2,.4,.8,'#8b0000',10);
   }
   
   // Root attack (phase 1+2)
@@ -4951,8 +5082,7 @@ function updBossEffects(d){
       sp(r.x,r.y,'#5a3a1a',8);shake=.2;
       const dx2=P.x-r.x,dy2=P.y-r.y;
       if(Math.sqrt(dx2*dx2+dy2*dy2)<1.5 && P.iv<=0){
-        P.hp-=r.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8b0000',6);
-        if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+        hurtP(r.dmg,.8,.3,.5,'#8b0000',6);
       }
       rootHazards.splice(i,1);
     }
@@ -4963,9 +5093,8 @@ function updBossEffects(d){
     p.x+=p.vx*d;p.y+=p.vy*d;p.life-=d;
     const dx3=P.x-p.x,dy3=P.y-p.y;
     if(Math.sqrt(dx3*dx3+dy3*dy3)<.8 && P.iv<=0){
-      P.hp-=p.dmg;P.iv=.6;P.ht=.2;shake=.4;sp(P.x,P.y,'#6b2fa0',8);
+      hurtP(p.dmg,.6,.2,.4,'#6b2fa0',8);
       bossProjs.splice(i,1);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
       continue;
     }
     if(p.life<=0)bossProjs.splice(i,1);
@@ -5085,7 +5214,7 @@ function performRitual(){
   // Must be at a sacred tree with sap
   if(P.sap<3){ft2(P.x,P.y,'Pas assez de s\u00e8ve (3 requises)','#e74c3c');return false}
   P.sap-=3;
-  P._ritualsPerformed++;
+  P._ritualsPerformed++;sfxPurify();
   ft2(P.x,P.y,'\ud83c\udf00 Rituel de purification!','#74c69d');
   sp(P.x,P.y,'#52b788',15);sp(P.x,P.y,'#ffd700',10);
   // Massive corruption reduction in radius 12
