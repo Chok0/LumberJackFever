@@ -310,6 +310,10 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   BROKEN_AXE:102,  // Broken legendary axe (world pickup — stuck in stump)
   CABIN_ABAND:103, // Abandoned cabin (deep forest clearing scene)
   DOCTOR:104,      // Doctor NPC (arrives after first contract)
+  RIVER:105,       // River tile (flowing water, interactable for raft)
+  BRIDGE:106,      // Bridge over river (walkable)
+  ARCHITECT:107,   // Architect NPC (arrives on first river sighting)
+  VIL_BARRICADE:108, // Village barricade (protection from corruption mobs)
   HERM_E:110,      // Estelle — Combat Hermit
   HERM_J:111,      // Ermite Jardinier
   HERM_T:112,      // Ermite Triste
@@ -442,6 +446,16 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _primDeposited:false,    // deposited axe at primordial tree
   _primStartedCut:false,   // started cutting (for renounce path)
   _guardianFought:false,   // fought guardian (even if renounced after)
+  // === RIVER & ARCHITECT SYSTEM ===
+  _riverSeen:false,          // has the player seen a river tile?
+  _architectArrived:false,   // architect NPC spawned in village
+  _architectPos:null,        // {x,y}
+  _hasRaftPlan:false,        // bought raft blueprint
+  _hasBridgePlan:false,      // bought bridge blueprint
+  _hasBarricadePlan:false,   // bought barricade blueprint
+  _bridgesBuilt:0,           // total bridges placed
+  _barricadesBuilt:0,        // village barricades placed
+  _vilUnrest:0,              // village unrest level (0-100, mobs near village)
 };
 const RES_WEIGHT={wood:1,sap:1};
 function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap+(P.seeds||0)*TUNING.seedBagWeight+(P._instruments||[]).length*TUNING.instrumentBagWeight+(P._brokenAxeItem?3:0)}
@@ -2186,6 +2200,12 @@ const NPC_DATA = {
     borderCol: '#4a8aaa',
     visited: false,
   },
+  [TT.ARCHITECT]: {
+    name: 'Sven l\'Architecte',
+    title: '🏗️ Architecte',
+    borderCol: '#b58863',
+    visited: false,
+  },
 };
 
 // ============ SACRED TREE LORE SYSTEM ============
@@ -2596,6 +2616,46 @@ function drawTristePortrait(c){
   c.fillStyle='#8a7a5a';c.fillRect(62,44,6,4);c.fillRect(62,44,2,20);c.fillRect(68,44,2,20);
   c.fillStyle='#c0b080';c.fillRect(64,48,1,12);c.fillRect(66,48,1,12);
 }
+function drawArchitectPortrait(c){
+  // Warm workshop background
+  c.fillStyle='#12100a';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,40,8,40,40,50);
+  gr.addColorStop(0,'rgba(180,136,100,0.1)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Blueprint scroll in background
+  c.fillStyle='rgba(240,232,200,0.12)';c.fillRect(8,8,20,30);
+  c.fillStyle='rgba(74,122,170,0.15)';c.fillRect(10,12,16,1);c.fillRect(10,16,14,1);c.fillRect(10,20,16,1);c.fillRect(10,24,10,1);
+  // Neck
+  c.fillStyle='#c8956a';c.fillRect(34,56,12,10);
+  // Shoulders/work vest
+  c.fillStyle='#6a5030';c.fillRect(18,64,44,16);
+  c.fillStyle='#7a6040';c.fillRect(22,66,36,14);
+  // Leather tool belt
+  c.fillStyle='#5a3a1a';c.fillRect(22,66,36,3);
+  c.fillStyle='#aaa';c.fillRect(36,67,4,2);
+  // Head
+  c.fillStyle='#d4a070';c.fillRect(26,16,28,38);
+  // Jaw
+  c.fillStyle='#c89868';c.fillRect(24,40,32,10);
+  c.fillStyle='#d4a070';c.fillRect(26,38,28,8);
+  // Brown hair, practical cut
+  c.fillStyle='#5a3a1a';c.fillRect(24,10,32,12);
+  c.fillRect(24,10,4,20);c.fillRect(52,10,4,20);
+  // Eyes - keen, observant
+  c.fillStyle='#0a0a0a';c.fillRect(32,26,5,4);c.fillRect(44,26,5,4);
+  c.fillStyle='#6a8a5a';c.fillRect(33,27,3,2);c.fillRect(45,27,3,2);
+  c.fillStyle='#9aba7a';c.fillRect(34,27,1,1);c.fillRect(46,27,1,1);
+  // Nose
+  c.fillStyle='#c89060';c.fillRect(38,30,4,6);
+  // Mouth with slight smile
+  c.fillStyle='#b07050';c.fillRect(35,38,10,2);
+  c.fillStyle='#c08060';c.fillRect(36,39,8,1);
+  // Short beard
+  c.fillStyle='#5a3a1a';c.fillRect(28,42,24,6);c.fillRect(32,48,16,3);
+  // Ruler/tool in hand
+  c.fillStyle='#c0a860';c.fillRect(60,40,4,30);
+  c.fillStyle='#e0c880';c.fillRect(60,40,4,2);c.fillRect(60,50,4,1);c.fillRect(60,60,4,1);
+}
 function drawPortrait(npcType, canvas){
   const c = canvas.getContext('2d');
   c.imageSmoothingEnabled = false;
@@ -2613,7 +2673,8 @@ function drawPortrait(npcType, canvas){
   else if(npcType === TT.HERM_E) drawEstellePortrait(c);
   else if(npcType === TT.HERM_J) drawJardinierPortrait(c);
   else if(npcType === TT.HERM_T) drawTristePortrait(c);
-  
+  else if(npcType === TT.ARCHITECT) drawArchitectPortrait(c);
+
   // Border glow
   const nd = NPC_DATA[npcType];
   if(nd){
@@ -3034,6 +3095,27 @@ function getDialogue(npcType){
     }else{
       lines.push("Votre grand-mère va bien pour le moment. Continuez les soins réguliers.");
     }
+  }else if(npcType === TT.ARCHITECT){
+    if(first){
+      lines.push("Salut ! Sven, architecte et ingénieur. Les rivières m'ont attiré ici.");
+      lines.push("Tu veux traverser les cours d'eau ? Construire des ponts ? Des radeaux ?");
+      lines.push("J'ai les plans pour tout ça. Et aussi des barricades pour protéger le village.");
+      lines.push("Rapporte-moi du bois, et je t'apprendrai à construire.");
+    }else if((P._vilUnrest||0)>30&&(P._barricadesBuilt||0)<5){
+      lines.push("Le village est menacé ! Les monstres rôdent au nord...");
+      lines.push("Installe des barricades, vite ! J'ai les plans si tu veux.");
+    }else if(P._hasRaftPlan&&P._hasBridgePlan&&P._hasBarricadePlan){
+      lines.push("Tu as tous mes plans ! Tu es un vrai bâtisseur maintenant.");
+      lines.push("Continue à construire des ponts et des barricades. C'est vital.");
+    }else{
+      const pool=[
+        "Un bon pont vaut mieux qu'un long détour.",
+        "Les radeaux, c'est rapide mais ça coûte du bois à chaque trajet.",
+        "Les barricades protègent le village. Plus il y en a, mieux c'est.",
+        "L'architecture, c'est l'art de résoudre les problèmes avec du bois.",
+      ];
+      lines.push(pool[Math.floor(gt*11)%pool.length]);
+    }
   }else if(npcType === TT.HOME){
     // Grandparent dialogue
     const gpLines=getGrandparentDialogue();
@@ -3217,6 +3299,34 @@ function getDialogue(npcType){
     lines.push('💬 Rumeur: '+getTavernRumors());
   }
   
+  // Village unrest: villagers complain when mobs are near
+  const unrest=P._vilUnrest||0;
+  const isVillager=npcType===TT.TAV||npcType===TT.FORGE||npcType===TT.HOME||npcType===TT.CHAM||npcType===TT.CARTO||npcType===TT.ANTHRO||npcType===TT.DOCTOR;
+  if(isVillager && unrest>20){
+    const barrLevel=vilBarricadeLevel();
+    if(unrest>70&&barrLevel<0.5){
+      const fearLines=[
+        "Les créatures rôdent aux portes du village ! On ne peut plus dormir !",
+        "Quelqu'un doit faire quelque chose ! Des barricades, un rituel, n'importe quoi !",
+        "Si ça continue, les gens vont fuir. Le village va mourir.",
+      ];
+      lines.push("...");
+      lines.push(fearLines[Math.floor(gt*7)%fearLines.length]);
+    }else if(unrest>40){
+      const worryLines=[
+        "Tu as vu les ombres au nord ? Ça me rend nerveux...",
+        "Les enfants n'osent plus sortir. Ces créatures sont trop proches.",
+        "Il faudrait des barricades. Ou purifier la terre corrompue.",
+      ];
+      lines.push("...");
+      lines.push(worryLines[Math.floor(gt*7)%worryLines.length]);
+    }else{
+      lines.push("... Des bruits étranges viennent du nord cette nuit...");
+    }
+    if(barrLevel>=0.8) lines.push("Au moins les barricades tiennent. Pour l'instant.");
+    else if(barrLevel>0) lines.push(`Les barricades aident un peu... mais il en faut plus.`);
+  }
+
   NPC_VISITS[npcType] = (NPC_VISITS[npcType]||0) + 1;
   return lines;
 }
@@ -3588,6 +3698,39 @@ function genMap(){
     }
   }
 
+  // === RIVERS: 3 rivers flowing north→south with meandering ===
+  window._rivers=[]; // store river paths for later reference
+  const riverStarts=[
+    {x:Math.floor(95+n2(0,0,seed+1100)*15), label:'riviere_ouest'},  // left-center ~95-110
+    {x:Math.floor(128+n2(1,0,seed+1101)*10-5), label:'riviere_centre'}, // center ~123-133
+    {x:Math.floor(150+n2(2,0,seed+1102)*15), label:'riviere_est'},  // right-center ~150-165
+  ];
+  for(const rs of riverStarts){
+    let rx=rs.x;
+    const riverPath=[];
+    // River flows from y=5 down to y=VIL_Y-3 (stop before village)
+    for(let ry=5;ry<VIL_Y-3;ry++){
+      // Meander: slight random drift based on noise
+      const drift=n2(ry,rs.x,seed+1110);
+      if(drift>.75&&rx<MW-10) rx++;
+      else if(drift<.25&&rx>10) rx--;
+      // River width: 1-2 tiles
+      const w=n2(rx,ry,seed+1120)>.6?2:1;
+      for(let dx=0;dx<w;dx++){
+        const nx=rx+dx;
+        if(nx>2&&nx<MW-2&&ry>2&&ry<VIL_Y-2){
+          const cur=map[ry][nx];
+          // Don't overwrite buildings, primordial tree, sacred trees, bosses, or water ponds
+          if(cur!==TT.PRIM&&cur!==TT.TJ&&cur!==TT.WA&&!isBld(cur)&&cur!==TT.RK){
+            map[ry][nx]=TT.RIVER;
+            riverPath.push({x:nx,y:ry});
+          }
+        }
+      }
+    }
+    window._rivers.push({label:rs.label,path:riverPath});
+  }
+
   // === BOSS ARENAS ===
   // East boss: Arbre-pieuvre at x=220, y=100
   const bossEX=220,bossEY=100;
@@ -3717,9 +3860,9 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
-function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE}
+function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
 
 // Flood-fill to find contiguous stump cluster (8-connected)
 function findStumpCluster(sx,sy){
@@ -4439,6 +4582,37 @@ function updP2(d){
           return;
         }
       }
+      // Check for River interaction (build raft / build bridge)
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+        const nx2=px2+dx,ny2=py2+dy;
+        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.RIVER){
+          shopOn=true;curShop='RIVER';
+          document.getElementById('shp').style.display='block';
+          document.querySelector('#shp h2').textContent='🏞️ Rivière';
+          document.querySelector('#shp h2').style.display='block';
+          const si2=document.getElementById('si2');si2.style.display='block';
+          let html='';
+          if(P._hasRaftPlan){
+            const raftCost=5;
+            const canRaft=P.w>=raftCost;
+            html+='<div class="si"><span>🛶 Construire un radeau et rentrer au village ('+raftCost+' bûches)</span><button class="sb" onclick="doRaftToVillage('+nx2+','+ny2+')"'+(canRaft?'':' disabled style="opacity:0.4"')+'>Construire</button></div>';
+            if(!canRaft) html+='<div class="si" style="color:#e74c3c;font-size:9px">Pas assez de bûches ('+P.w+'/'+raftCost+')</div>';
+          }else{
+            html+='<div class="si" style="color:#aaa;font-size:9px">Tu ne sais pas construire un radeau. Parle à l\'Architecte au village.</div>';
+          }
+          if(P._hasBridgePlan){
+            const bridgeCost=10;
+            const canBridge=P.w>=bridgeCost;
+            html+='<div class="si"><span>🌉 Construire un pont ici ('+bridgeCost+' bûches)</span><button class="sb" onclick="doBuildBridge('+nx2+','+ny2+')"'+(canBridge?'':' disabled style="opacity:0.4"')+'>Pont</button></div>';
+            if(!canBridge) html+='<div class="si" style="color:#e74c3c;font-size:9px">Pas assez de bûches ('+P.w+'/'+bridgeCost+')</div>';
+          }
+          html+='<div class="si" style="color:#6ab8d4;font-size:9px;padding:4px">L\'eau coule vers le sud, vers le village...</div>';
+          si2.innerHTML=html;
+          // Also trigger river-seen for architect
+          if(!P._riverSeen){P._riverSeen=true;ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');spawnArchitect()}
+          return;
+        }
+      }
       // Then check for buildings
       for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
     }
@@ -4722,6 +4896,7 @@ function shopTitle(t){
   if(t===TT.HERM_T)return'🎵 L\'Ermite Triste';
   if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
   if(t===TT.DOCTOR)return'💊 Dr. Engström';
+  if(t===TT.ARCHITECT)return'🏗️ Sven — Architecte';
   return'🏠 Village';
 }
 function updShop(){
@@ -4922,6 +5097,36 @@ function updShop(){
       items.push({n:'   "Je suis désolé... Il n\'y a plus rien que je puisse faire."',c:9999,a:()=>{}});
     }
     items.push({n:'💊 Soins personnels (restore HP)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️ Soigné!','#52b788')}});
+  }else if(t===TT.ARCHITECT){
+    // Architect: sell plans for rafts, bridges, barricades
+    items=[];
+    items.push({n:'═══ PLANS DE CONSTRUCTION ═══',c:9999,a:()=>{}});
+    if(!P._hasRaftPlan){
+      items.push({n:'🛶 Plan: Radeau (retour rapide au village via rivière)',c:20,a:()=>{P._hasRaftPlan=true;ft2(P.x,P.y,'📜 Plan de radeau acquis!','#6ab8d4');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Radeau (acquis) — 5 bûches par trajet',c:9999,a:()=>{}});
+    }
+    if(!P._hasBridgePlan){
+      items.push({n:'🌉 Plan: Pont (traverser les rivières)',c:35,a:()=>{P._hasBridgePlan=true;ft2(P.x,P.y,'📜 Plan de pont acquis!','#b58863');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Pont (acquis) — 10 bûches par pont',c:9999,a:()=>{}});
+    }
+    if(!P._hasBarricadePlan){
+      items.push({n:'🛡️ Plan: Barricade (protéger le village)',c:30,a:()=>{P._hasBarricadePlan=true;ft2(P.x,P.y,'📜 Plan de barricade acquis!','#b58863');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Barricade (acquis) — 8 bûches par barricade',c:9999,a:()=>{}});
+    }
+    items.push({n:'═══ CONSTRUIRE ═══',c:9999,a:()=>{}});
+    if(P._hasBarricadePlan){
+      items.push({n:`🛡️ Installer une barricade au village (8 bûches, stock: ${P.w})`,c:0,a:()=>{doBuildBarricade();updShop()}});
+      items.push({n:`   Barricades: ${P._barricadesBuilt||0}/10 · Protection: ${Math.floor(vilBarricadeLevel()*100)}%`,c:9999,a:()=>{}});
+    }
+    // Village unrest info
+    if((P._vilUnrest||0)>0){
+      const unrest=Math.floor(P._vilUnrest||0);
+      items.push({n:`   ⚠️ Inquiétude du village: ${unrest}%`,c:9999,a:()=>{}});
+      if(unrest>50) items.push({n:'   🔴 Les villageois paniquent!',c:9999,a:()=>{}});
+    }
   }else if(t===TT.LUTH){
     // Luthier: instrument collection (wood→instruments)
     const instrumentDefs=[
@@ -5173,6 +5378,59 @@ function dGround(sx,sy,wx,wy){
   }
   // Water
   if(tile===TT.WA){const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];if(ws)X.drawImage(ws,0,0,32,32,px2,py2,s,s);return}
+  // River (flowing water — distinct blue with flow lines)
+  if(tile===TT.RIVER){
+    const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];
+    if(ws) X.drawImage(ws,0,0,32,32,px2,py2,s,s);
+    else{X.fillStyle='#1a5a8a';X.fillRect(px2,py2,s,s)}
+    // Flow lines overlay — white streaks moving south
+    X.globalAlpha=0.15;X.fillStyle='#aaddff';
+    const flowOff=Math.floor(gt*40)%s;
+    for(let i=0;i<3;i++){
+      const lx=px2+s*0.15+i*s*0.3;
+      const ly=py2+((flowOff+i*s*0.35)%s);
+      X.fillRect(lx,ly,s*0.08,s*0.25);
+    }
+    X.globalAlpha=1;
+    // Darker edges to distinguish from ponds
+    X.fillStyle='rgba(10,40,60,0.25)';
+    X.fillRect(px2,py2,s*0.1,s);X.fillRect(px2+s*0.9,py2,s*0.1,s);
+    return;
+  }
+  // Bridge (wooden planks over river — walkable)
+  if(tile===TT.BRIDGE){
+    // Draw river underneath
+    const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];
+    if(ws) X.drawImage(ws,0,0,32,32,px2,py2,s,s);
+    else{X.fillStyle='#1a5a8a';X.fillRect(px2,py2,s,s)}
+    // Wooden planks
+    X.fillStyle='#8a6a3a';X.fillRect(px2+s*0.1,py2,s*0.8,s);
+    X.fillStyle='#7a5a2a';
+    for(let i=0;i<4;i++){
+      const py=py2+i*s*0.25+s*0.02;
+      X.fillRect(px2+s*0.1,py,s*0.8,s*0.2);
+      X.strokeStyle='#5a3a1a';X.lineWidth=1;X.strokeRect(px2+s*0.1,py,s*0.8,s*0.2);
+    }
+    // Railings
+    X.fillStyle='#6a4a20';X.fillRect(px2+s*0.08,py2,s*0.06,s);X.fillRect(px2+s*0.86,py2,s*0.06,s);
+    return;
+  }
+  // Village Barricade (spiky wooden fence)
+  if(tile===TT.VIL_BARRICADE){
+    X.fillStyle=(wx+wy)%2?'#c9a86c':'#bfa060';X.fillRect(px2,py2,s,s);
+    // Stakes
+    X.fillStyle='#6a4a20';
+    for(let i=0;i<4;i++){
+      const sx2=px2+s*0.1+i*s*0.22;
+      X.fillRect(sx2,py2+s*0.15,s*0.12,s*0.7);
+      // Pointed top
+      X.beginPath();X.moveTo(sx2,py2+s*0.15);X.lineTo(sx2+s*0.06,py2);X.lineTo(sx2+s*0.12,py2+s*0.15);X.fill();
+    }
+    // Horizontal beams
+    X.fillStyle='#5a3a15';X.fillRect(px2+s*0.05,py2+s*0.4,s*0.9,s*0.08);
+    X.fillRect(px2+s*0.05,py2+s*0.65,s*0.9,s*0.08);
+    return;
+  }
 
   // Forest floor — HD textured ground tile
   if(cr>.5){
@@ -5253,6 +5511,23 @@ function dObj(wx,wy){
     // Window
     X.fillStyle='#aaccee';X.fillRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
     X.strokeStyle='#888';X.lineWidth=1*SC;X.strokeRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+  }
+  else if(tile===TT.ARCHITECT){
+    // Architect's workshop — wooden structure with blueprint scroll
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#7a5a3a';X.fillRect(sx2+4*SC,sy2-10*SC,56*SC,48*SC);
+    X.fillStyle='#8a6a4a';X.fillRect(sx2+8*SC,sy2-6*SC,48*SC,40*SC);
+    X.fillStyle='#6a4a2a';X.fillRect(sx2+2*SC,sy2-14*SC,60*SC,8*SC);
+    // Door
+    X.fillStyle='#5a3a1a';X.fillRect(sx2+24*SC,sy2+10*SC,16*SC,24*SC);
+    // Window
+    X.fillStyle='#aaccdd';X.fillRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+    X.strokeStyle='#6a5030';X.lineWidth=1*SC;X.strokeRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+    // Blueprint scroll on sign
+    X.fillStyle='#f0e8c8';X.fillRect(sx2+44*SC,sy2-16*SC,10*SC,14*SC);
+    X.fillStyle='#4a7aaa';X.fillRect(sx2+46*SC,sy2-13*SC,6*SC,1.5*SC);
+    X.fillRect(sx2+46*SC,sy2-10*SC,6*SC,1.5*SC);
+    X.fillRect(sx2+46*SC,sy2-7*SC,4*SC,1.5*SC);
   }
   else if(tile===TT.HERM_E){
     // Estelle's training ground — combat-themed hut
@@ -5460,6 +5735,14 @@ function dPlayer(){
       const nx3=px3+dx2,ny3=py3+dy2;
       if(nx3>=0&&ny3>=0&&nx3<MW&&ny3<MH){const t=map[ny3][nx3];if(isBld(t)){nearBld=t;nearBldX=nx3;nearBldY=ny3}}
     }
+    // Also check for river nearby
+    let nearRiver=false,nearRiverX=0,nearRiverY=0;
+    if(!nearBld){
+      for(let dy2=-2;dy2<=2&&!nearRiver;dy2++)for(let dx2=-2;dx2<=2&&!nearRiver;dx2++){
+        const nx3=px3+dx2,ny3=py3+dy2;
+        if(nx3>=0&&ny3>=0&&nx3<MW&&ny3<MH&&map[ny3][nx3]===TT.RIVER){nearRiver=true;nearRiverX=nx3;nearRiverY=ny3}
+      }
+    }
     if(nearBld){
       const pulse=.6+Math.sin(gt*4)*.3;
       X.globalAlpha=pulse;
@@ -5475,6 +5758,18 @@ function dPlayer(){
       X.font=`bold ${9*SC}px monospace`;
       X.fillStyle='#000';X.fillText('[E]',sx+1,sy-22*SC+1);
       X.fillStyle='#ffd700';X.fillText('[E]',sx,sy-22*SC);
+      X.globalAlpha=1;
+    }else if(nearRiver){
+      const pulse=.6+Math.sin(gt*4)*.3;
+      X.globalAlpha=pulse;
+      X.textAlign='center';
+      const rsx=(nearRiverX-smCam.x)*T*SC+T/2*SC, rsy=(nearRiverY-smCam.y)*T*SC;
+      X.font=`bold ${7*SC}px monospace`;
+      X.fillStyle='#000';X.fillText('Rivière',rsx+1,rsy-20*SC+1);
+      X.fillStyle='#6ab8d4';X.fillText('Rivière',rsx,rsy-20*SC);
+      X.font=`bold ${9*SC}px monospace`;
+      X.fillStyle='#000';X.fillText('[E]',sx+1,sy-22*SC+1);
+      X.fillStyle='#6ab8d4';X.fillText('[E]',sx,sy-22*SC);
       X.globalAlpha=1;
     }
   }
@@ -5760,6 +6055,10 @@ function dMM(){
     else if(t===TT.BROKEN_AXE)c='#daa520';
     else if(t===TT.CABIN_ABAND)c='#3a2a1a';
     else if(t===TT.DOCTOR)c='#4a8aaa';
+    else if(t===TT.ARCHITECT)c='#b58863';
+    else if(t===TT.RIVER)c='#1a6aaa';
+    else if(t===TT.BRIDGE)c='#8a6a3a';
+    else if(t===TT.VIL_BARRICADE)c='#6a4a20';
     else if(isDeco(t))c='#b0a070';
     else if(t===TT.HERB)c='#52b788';
     else if(t===TT.MUSH)c='#9060b0';
@@ -6508,6 +6807,134 @@ function doPrimRenounce(){
   setTimeout(()=>triggerEnding('renounce'),3000);
 }
 
+// ============ RIVER / RAFT / BRIDGE / BARRICADE SYSTEM ============
+function spawnArchitect(){
+  if(P._architectArrived)return;
+  P._architectArrived=true;
+  const CX=128, VIL_Y=MH-12;
+  // Place architect in village — near forge side
+  const ax=CX-4, ay=VIL_Y+6;
+  if(ay<MH&&ax>0&&ax<MW){
+    map[ay][ax]=TT.ARCHITECT;
+    P._architectPos={x:ax,y:ay};
+  }
+}
+function doRaftToVillage(rx,ry){
+  const raftCost=5;
+  if(P.w<raftCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasRaftPlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=raftCost;
+  P.wv=Math.max(0,(P.wv||0)-raftCost);
+  shopOn=false;document.getElementById('shp').style.display='none';
+  // Teleport animation
+  shake=.3;sp(P.x,P.y,'#4a9adf',15);
+  ft2(P.x,P.y,'🛶 En route vers le village...','#6ab8d4');
+  // Teleport to village entrance
+  const CX=128, VIL_Y=MH-12;
+  setTimeout(()=>{
+    P.x=CX;P.y=VIL_Y-1;
+    sp(P.x,P.y,'#4a9adf',10);
+    ft2(P.x,P.y,'🏘️ Arrivé au village!','#52b788');
+  },500);
+}
+function doBuildBridge(rx,ry){
+  const bridgeCost=10;
+  if(P.w<bridgeCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasBridgePlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=bridgeCost;
+  P.wv=Math.max(0,(P.wv||0)-bridgeCost);
+  // Replace river tile with bridge + adjacent river tiles vertically
+  map[ry][rx]=TT.BRIDGE;
+  // Also bridge adjacent river tiles (make it cross the full width)
+  for(let dx=-2;dx<=2;dx++){
+    const nx=rx+dx;
+    if(nx>=0&&nx<MW&&map[ry][nx]===TT.RIVER) map[ry][nx]=TT.BRIDGE;
+  }
+  P._bridgesBuilt=(P._bridgesBuilt||0)+1;
+  shopOn=false;document.getElementById('shp').style.display='none';
+  shake=.2;sp(rx,ry,'#8a6a3a',12);
+  ft2(P.x,P.y,'🌉 Pont construit!','#b58863');
+  addMaitrise(2);
+}
+function doBuildBarricade(){
+  const barrCost=8;
+  if(P.w<barrCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasBarricadePlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=barrCost;
+  P.wv=Math.max(0,(P.wv||0)-barrCost);
+  // Place barricade at northern edge of village
+  const CX=128, VIL_Y=MH-12;
+  let placed=false;
+  const barrY=VIL_Y-1;
+  // Find empty spots along the village border
+  for(let bx=CX-12;bx<=CX+12;bx++){
+    if(barrY>=0&&barrY<MH&&bx>=0&&bx<MW){
+      const t=map[barrY][bx];
+      if(t===TT.G||t===TT.PA||t===TT.BU||t===TT.FL){
+        map[barrY][bx]=TT.VIL_BARRICADE;
+        placed=true;
+        P._barricadesBuilt=(P._barricadesBuilt||0)+1;
+        break;
+      }
+    }
+  }
+  if(placed){
+    shake=.2;sp(P.x,P.y,'#8a6a3a',8);
+    ft2(P.x,P.y,'🛡️ Barricade installée!','#b58863');
+    addRestauration(1);
+  }else{
+    ft2(P.x,P.y,'Plus de place pour les barricades!','#e74c3c');
+    P.w+=barrCost; // refund
+  }
+}
+// Check if village is protected by barricades (enough barricades = protected)
+function vilBarricadeLevel(){
+  return Math.min(1,(P._barricadesBuilt||0)/10); // 10 barricades = fully protected
+}
+// Village unrest system: mobs near village increase unrest, barricades reduce it
+let _vilUnrestT=0;
+function updVilUnrest(d){
+  _vilUnrestT+=d;if(_vilUnrestT<2)return;_vilUnrestT=0;
+  const VIL_Y=MH-12,CX=128;
+  const vilRadius=20; // check mobs within 20 tiles of village center
+  let nearbyMobs=0;
+  for(const e of ents){
+    const dx=e.x-CX,dy=e.y-VIL_Y;
+    if(Math.sqrt(dx*dx+dy*dy)<vilRadius) nearbyMobs++;
+  }
+  // Barricades repel: each barricade reduces effective mob count
+  const barrProtection=vilBarricadeLevel();
+  const effectiveMobs=Math.max(0,nearbyMobs-Math.floor(barrProtection*8));
+  // Update unrest: rises with mobs, decays without
+  if(effectiveMobs>0){
+    P._vilUnrest=Math.min(100,(P._vilUnrest||0)+effectiveMobs*2);
+  }else{
+    P._vilUnrest=Math.max(0,(P._vilUnrest||0)-1);
+  }
+  // Barricades physically block mobs: push away mobs that hit barricade tiles
+  for(const e of ents){
+    const etx=Math.floor(e.x),ety=Math.floor(e.y);
+    if(etx>=0&&ety>=0&&etx<MW&&ety<MH&&map[ety][etx]===TT.VIL_BARRICADE){
+      // Push mob north (away from village)
+      e.y-=1.5;e.hp-=1; // barricades damage mobs slightly
+      sp(e.x,e.y,'#8a6a3a',5);
+    }
+  }
+  // Also check river tiles to detect first river sighting
+  if(!P._riverSeen){
+    const px2=Math.floor(P.x),py2=Math.floor(P.y);
+    for(let dy=-VH;dy<=VH;dy++)for(let dx=-VW;dx<=VW;dx++){
+      const nx=px2+dx,ny=py2+dy;
+      if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny][nx]===TT.RIVER){
+        P._riverSeen=true;
+        ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');
+        spawnArchitect();
+        return;
+      }
+    }
+  }
+}
+
 // ============ ENDING SYSTEM ============
 let endingActive=false;
 let endPhase=0, endTimer=0, endCharIdx=0, endTypeTimer=0;
@@ -6879,7 +7306,7 @@ function loop(ts){
       spawnGuardian(pp.x,pp.y);
     }
   }
-  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
+  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);shake=Math.max(0,shake-d*4)}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
 
