@@ -551,6 +551,137 @@ function hdDapples(c,cx,cy,rx,ry,count,seed){
   }
 }
 
+// ============ SPRITELIB TREE DRAWING PRIMITIVES ============
+// High-detail tree sprite system from spriteLib_trees_complete
+function sr(s){return()=>{s=(s*9301+49297)%233280;return s/233280}}
+function dk(c,f){const[r,g,b]=pc2(c);return`rgb(${Math.max(0,r*f|0)},${Math.max(0,g*f|0)},${Math.max(0,b*f|0)})`}
+function slLt(c,f){const[r,g,b]=pc2(c);return`rgb(${Math.min(255,r*f|0)},${Math.min(255,g*f|0)},${Math.min(255,b*f|0)})`}
+function pc2(c){if(c[0]==='#')return[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];const m=c.match(/(\d+)/g);return m?[+m[0],+m[1],+m[2]]:[0,0,0]}
+// Filled ellipse
+function fE(c,cx2,cy,rx2,ry,cl){for(let y=-ry;y<=ry;y++){const hw=Math.floor(rx2*Math.sqrt(Math.max(0,1-y*y/(ry*ry))));if(hw>=0)rc(c,cx2-hw,cy+y,hw*2+1,1,cl)}}
+// Ground shadow
+function gSh(c,cx2,y,rx2,ry){fE(c,cx2,y,rx2,ry,'rgba(8,20,12,0.18)');fE(c,cx2,y,rx2*.85|0,ry*.8|0,'rgba(8,20,12,0.10)')}
+// Canopy blob with organic edges
+function cB(c,cx2,cy,rx2,ry,p,o={}){
+  const sd=o.seed||42,rng=sr(sd),wF=o.wF||3,wA=o.wA||.12,wA2=o.wA2||.06;
+  const N=64,R=[];for(let i=0;i<N;i++){const a=i/N*Math.PI*2;R.push(1+Math.sin(a*wF+sd)*wA+Math.sin(a*(wF+2)+sd*2)*wA2)}
+  for(let y=-ry-4;y<=ry+4;y++)for(let x=-rx2-4;x<=rx2+4;x++){
+    const ag=Math.atan2(y,x),ai=((ag/(Math.PI*2))*N+N)%N,i0=ai|0,i1=(i0+1)%N,t=ai-i0;
+    const lR=R[i0]*(1-t)+R[i1]*t,d=Math.sqrt(x*x/(rx2*rx2)+y*y/(ry*ry));
+    if(d>lR)continue;
+    const ld=Math.sqrt((x+rx2*.3)**2+(y+ry*.3)**2)/Math.sqrt(rx2*rx2+ry*ry);
+    let cl;if(ld<.35)cl=p.h;else if(ld<.6)cl=p.l;else if(y>ry*.2)cl=p.s;else cl=p.b;
+    if(d>lR-.12)cl=p.s;px(c,cx2+x,cy+y,cl);
+  }
+  if(o.ec!==false){const cnt=o.ec||28;for(let i=0;i<cnt;i++){
+    const a=i/cnt*Math.PI*2,ai=((a/(Math.PI*2))*N+N)%N,i0=ai|0,i1=(i0+1)%N,t=ai-i0;
+    const lR=R[i0]*(1-t)+R[i1]*t;
+    const lx=Math.round(cx2+Math.cos(a)*rx2*lR),ly=Math.round(cy+Math.sin(a)*ry*lR);
+    const cl=(a>Math.PI*.7&&a<Math.PI*1.9)?p.l:p.b;
+    for(let j=0;j<2+(rng()*2|0);j++){px(c,lx+Math.round(Math.cos(a+j*.4)*(1+rng()*1.5)),ly+Math.round(Math.sin(a+j*.4)*(1+rng())),cl)}
+  }}
+}
+function cBs(c,cx2,cy,rx2,ry,p,o={}){cB(c,cx2,cy,rx2,ry,{s:p.s,b:p.s,l:p.s,h:p.s},{...o,ec:false})}
+// Conifer layers
+function coniferLayers(c,CX,layers,pal,o={}){
+  for(const L of layers){
+    const tipY=L.y,baseY=L.y+L.h;
+    for(let y=tipY+2;y<baseY+2;y++){const p=(y-tipY)/L.h,hw=L.w/2*p|0;rc(c,CX-hw+2,y,hw*2,1,pal.s)}
+    for(let y=tipY;y<baseY;y++){const p=(y-tipY)/L.h,hw=L.w/2*p|0;
+      for(let x=-hw;x<=hw;x++){const xn=(x+hw)/(hw*2||1);
+        let cl;if(xn<.3)cl=pal.b;else if(xn<.55)cl=pal.l;else if(xn<.7)cl=pal.h;else cl=pal.b;
+        if(p>.85)cl=pal.s;px(c,CX+x,y,cl);
+      }
+      if(y%4===0&&hw>4){px(c,CX-hw+1,y,pal.s);px(c,CX+hw-1,y,pal.s);
+        if(y%8===0&&o.needles!==false){px(c,CX-hw-1,y,pal.b);px(c,CX+hw+1,y,pal.b)}}
+    }
+  }
+}
+// Trunk
+function dT(c,cx2,yT,yB,bW,p,o={}){
+  const fl=o.flare||0;
+  for(let y=yT;y<yB;y++){const pr=(y-yT)/(yB-yT),f=pr*pr*fl|0,lx=cx2-(bW/2|0)-f,rx2=cx2+(bW/2|0)+f,w=rx2-lx;
+    for(let x=lx;x<rx2;x++){const xn=(x-lx)/w;let cl;if(xn<.15)cl=p.s;else if(xn<.35)cl=p.b;else if(xn<.6)cl=p.l;else if(xn<.8)cl=p.b;else cl=p.s;px(c,x,y,cl)}
+    if(o.furrows&&w>8){const sp=o.fSp||6;for(let fx=lx+3;fx<rx2-3;fx+=sp)px(c,fx,y,p.s)}
+  }
+}
+// Multi-stem
+function dMS(c,cx2,yB,stems,p){
+  for(const s of stems){const sx=cx2+(s.ox||0),sy=s.sy||(yB-40);
+    for(let y=sy;y<yB;y++){const w=s.w||5,lx=sx-(w/2|0);for(let x=lx;x<lx+w;x++){const xn=(x-lx)/w;px(c,x,y,xn<.25?p.s:xn<.65?p.l:p.b)}}
+  }
+}
+// Detail functions
+function bMarks(c,cx2,yT,yB,tW,sd){const r=sr(sd||42);for(let y=yT;y<yB;y++){const lx=cx2-(tW/2|0);if(y%7===0){const mw=4+(r()*5|0),mx=lx+2+(r()*(tW-mw-2)|0);rc(c,mx,y,mw,1,'rgba(80,65,50,0.55)')}if(y%11===3){const mw=3+(r()*3|0),mx=lx+2+(r()*(tW-mw-1)|0);rc(c,mx,y,mw,1,'rgba(90,75,60,0.4)')}}}
+function pBark(c,cx2,yT,yB,tW,sd){const r=sr(sd||55),lx=cx2-(tW/2|0),rx3=cx2+(tW/2|0);[.3,.55,.75].forEach(p2=>{const py=yT+(yB-yT)*p2|0;if(r()>.4){px(c,lx-1,py,'#e8e0d0');px(c,lx-1,py+1,'#ddd4c4')}if(r()>.4){px(c,rx3,py+3,'#ddd4c4');px(c,rx3,py+4,'#d4c8b8')}})}
+function dKnot(c,x,y,sz){const cs=['#5a4a38','#6b5a48','#7a6a58','#8a7a68'];for(let dy=-sz;dy<=sz;dy++)for(let dx=-sz;dx<=sz;dx++){const d=Math.sqrt(dx*dx+dy*dy);if(d<=sz)px(c,x+dx,y+dy,cs[Math.min(3,d|0)])}px(c,x,y,'#4a3a28')}
+function dRoots(c,cx2,yB,tW,cl,cl2,sz){const lens={s:[5,3],m:[8,5,3],l:[12,8,5]}[sz||'m'];for(const s of[-1,1])for(let r=0;r<lens.length;r++){const rx2=cx2+s*((tW/2|0)+2+r*5),ry=yB-2-r*2,rL=lens[r],rH=Math.max(2,4-r),sx=s===1?rx2:rx2-rL;rc(c,sx,ry,rL,rH,cl);rc(c,sx+(s===1?0:1),ry,rL-1,1,cl2)}}
+function dMoss(c,cx2,y,w,o={}){const h=o.h||3;rc(c,cx2-(w/2|0),y,w,h,o.c||'#2d6a4f');rc(c,cx2-(w/2|0)+1,y+1,w-2,1,o.cl||'#40916c')}
+function dBr(c,brs,cl,clH){for(const b of brs)for(let t=0;t<b.len;t++){const bx=Math.round(b.x+b.dx*t),by=Math.round(b.y+b.dy*t),th=Math.max(1,(b.th||2)-(t/(b.tp||7)|0));rc(c,bx,by,th>1?2:1,th,cl);if(th>1&&clH)px(c,bx+1,by,clH)}}
+function dCatkins(c,pos,sd){const r=sr(sd||88),cs=['#c8b060','#b8a050','#a89040','#d0c070'];for(const[x,y]of pos){const len=3+(r()*3|0);for(let i=0;i<len;i++){const sw=Math.round(Math.sin(i*.8+sd)*.8);px(c,x+sw,y+i,cs[i%4]);if(i>0&&i<len-1)px(c,x+sw+1,y+i,cs[(i+1)%4])}}}
+function dCones(c,pos){for(const[x,y]of pos){px(c,x,y,'#5a3828');px(c,x,y+1,'#4a2818');px(c,x+1,y,'#6a4838');px(c,x,y+2,'#3a1e10')}}
+function dMush2(c,x,y){rc(c,x,y,2,2,'#a08060');rc(c,x-1,y-1,4,1,'#c8a878');px(c,x,y-2,'#d4b888');px(c,x+1,y-1,'#e8d8c0')}
+function dBerries(c,pos,cl='#cc2020'){for(const[x,y]of pos){px(c,x,y,cl);px(c,x+1,y,dk(cl,.8));px(c,x,y+1,dk(cl,.6))}}
+function dFungus2(c,x,y){rc(c,x,y,5,2,'#8a7a5a');rc(c,x+1,y,3,1,'#a89a7a');px(c,x+3,y,'#b0a080')}
+function dCrystals(c,pos,cl='#a0c0d0'){for(const[x,y]of pos){px(c,x,y,cl);px(c,x+1,y-1,slLt(cl,1.15));px(c,x,y-2,dk(cl,.85));px(c,x+1,y-3,cl)}}
+function dSparkle(c,pos){for(const[x,y]of pos){px(c,x,y,'#FFFFFF');px(c,x+1,y,'#FFFFF0');px(c,x,y-1,'rgba(255,255,255,0.4)')}}
+function dGoldVeins(c,cx2,yT,yB,w){for(let y=yT;y<yB;y++){const n=Math.sin(y*2.7+11)*43758.5;if((n-Math.floor(n))>.55){px(c,cx2,y,'#B8860B');px(c,cx2+1,y,'rgba(218,165,32,0.4)')}}}
+function dSpMoss(c,pos,len){for(const[x,y]of pos){for(let i=0;i<len;i++)px(c,x+Math.round(Math.sin(i*.5)*.5),y+i,`rgba(160,180,140,${.5-i/(len*2)})`)}}
+function dRunes(c,pos){const gc=['#FFD700','#DAA520','#E8C030','#FFF8DC'];for(let i=0;i<pos.length;i++){const[x,y]=pos[i];rc(c,x,y,3,2,gc[i%4]);px(c,x+1,y+1,'#B8860B');px(c,x-1,y-1,'rgba(255,215,0,0.15)')}}
+function dFlowers(c,pos,cl){for(const[x,y]of pos){px(c,x,y,cl);px(c,x+1,y,cl)}}
+
+// SpriteLib Palettes
+const SLP={
+  birchB:{s:'#b8a88c',b:'#ddd4c0',l:'#ece4d4',h:'#f4ecdc'},
+  birchL:{s:'#2d6a4f',b:'#52b788',l:'#74c69d',h:'#a8dca4'},
+  hazelB:{s:'#4a3420',b:'#7a5a30',l:'#8a6a38',h:'#9a7a48'},
+  hazelL:{s:'#2a6030',b:'#60b858',l:'#7acc70',h:'#a8e8a0'},
+  alderB:{s:'#2a1810',b:'#4a3020',l:'#5a3828',h:'#6a4838'},
+  alderL:{s:'#0f3018',b:'#1a5a2a',l:'#2a6a3a',h:'#4a8a5a'},
+  oakB:{s:'#3a1e08',b:'#6B4226',l:'#8a6040',h:'#a07850'},
+  oakL:{s:'#0a1a10',b:'#1b4332',l:'#2d6a4f',h:'#40916c'},
+  mapleB:{s:'#3a2010',b:'#6B4226',l:'#7A5033',h:'#9a7050'},
+  mapleL:{s:'#1e4420',b:'#4a9a50',l:'#6aba60',h:'#90d888'},
+  pineB:{s:'#5a2a15',b:'#8a4a28',l:'#9a5a30',h:'#aa6a38'},
+  pineL:{s:'#0a2810',b:'#1a5a28',l:'#2d6a40',h:'#3d8b5e'},
+  ashB:{s:'#5a5a52',b:'#8a8a80',l:'#a0a098',h:'#b0b0a8'},
+  ashL:{s:'#254a28',b:'#4aaa58',l:'#6ac878',h:'#90e898'},
+  beechB:{s:'#787870',b:'#909088',l:'#a8a8a0',h:'#b8b8b0'},
+  beechL:{s:'#0a2810',b:'#1a4a28',l:'#2a5838',h:'#3a6a48'},
+  yewB:{s:'#1a1008',b:'#3a2818',l:'#4a3820',h:'#5a4830'},
+  yewL:{s:'#051008',b:'#1a3a18',l:'#2a4a28',h:'#3a5a38'},
+  lindenB:{s:'#5a4830',b:'#7a6848',l:'#8a7858',h:'#9a8868'},
+  lindenL:{s:'#1e4418',b:'#4a9a30',l:'#6aba50',h:'#8ada70'},
+  seqB:{s:'#5a1808',b:'#8a3020',l:'#9a3828',h:'#aa4838'},
+  seqL:{s:'#051008',b:'#1a3818',l:'#2a4a28',h:'#3a5a38'},
+  petB:{s:'#6a6a62',b:'#8a8880',l:'#a8a8a0',h:'#c0c0b8'},
+  ebonyB:{s:'#080606',b:'#1a1414',l:'#2a2020',h:'#3a2a2a'},
+  ebonyL:{s:'#081008',b:'#1a2a18',l:'#2a3a28',h:'#3a4a38'},
+  roseB:{s:'#3a1828',b:'#5a2a3a',l:'#6a3a48',h:'#7a4a58'},
+  roseL:{s:'#1a1820',b:'#3a2a48',l:'#4a3a58',h:'#6a5a78'},
+  cypB:{s:'#2a3018',b:'#3a4a2a',l:'#4a5a3a',h:'#5a6a48'},
+  cypL:{s:'#0a1808',b:'#1a3a18',l:'#2a4a28',h:'#3a5a38'},
+  manB:{s:'#2a2010',b:'#3a3020',l:'#4a3a28',h:'#5a4a38'},
+  manL:{s:'#0a1808',b:'#1a3a1a',l:'#2a4a28',h:'#3a5a38'},
+  spruceL:{s:'#0a2008',b:'#183a18',l:'#285028',h:'#386838'},
+  larchL:{s:'#1a3810',b:'#3a7a28',l:'#5a9a40',h:'#7aba58'},
+  firL:{s:'#081808',b:'#143218',l:'#1e4828',h:'#2a5a38'},
+  pbB:{s:'#a89880',b:'#d4c8b0',l:'#e0d8c0',h:'#ece4d4'},
+  pbL:{s:'#1a3818',b:'#3a7a38',l:'#5a9a58',h:'#7aba78'},
+  eroB:{s:'#4a3818',b:'#6a5028',l:'#7a6038',h:'#8a7048'},
+  eroL:{s:'#1a2808',b:'#4a6a18',l:'#6a8a28',h:'#8aaa48'},
+  gold:{s:'#8B6914',b:'#DAA520',l:'#FFD700',h:'#FFF8DC'},
+  palB:{s:'#2a1018',b:'#4a2028',l:'#5a2838',h:'#6a3848'},
+  palL:{s:'#0a0810',b:'#1a1828',l:'#2a2838',h:'#3a3848'},
+};
+
+// Generate a SpriteLib tree at 4× HD (displays same size as old 2× HD trees)
+function genSLTree(k,w,h,drawFn){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const x=c.getContext('2d');x.imageSmoothingEnabled=false;
+  drawFn(x,w,h);c._hd=4;_s[k]=c;
+}
+
 function initSprites(){
   const dkL1=PAL.leaf1.map(c=>{const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
   const hlL1=['#95d5b2','#b7e4c7','#a8dca4','#82d4a0','#d8f3dc'];
@@ -561,526 +692,262 @@ function initSprites(){
   const dkGold=PAL.gold.map(c=>{const r=parseInt(c.slice(1,3),16),g=parseInt(c.slice(3,5),16),b=parseInt(c.slice(5,7),16);return`rgb(${Math.floor(r*.6)},${Math.floor(g*.6)},${Math.floor(b*.6)})`});
   const hlGold=['#FFF8DC','#FFEFD5','#FFE4B5','#FFFFF0'];
 
-  // ===== BOULEAU / BIRCH (72×104 HD) =====
-  mkHD('bou',72,104,(c)=>{
-    // Trunk
-    for(let y=56;y<96;y++){
-      for(let x=30;x<42;x++) px(c,x,y,PAL.birch[(x*3+y*5)%PAL.birch.length]);
-      // Birch lenticels (dark horizontal dashes)
-      if(y%5===0){rc(c,32,y,4,1,'#777');px(c,33,y,'#666')}
-      if(y%7===2){rc(c,36,y,3,1,'#5a5a5a')}
-      if(y%8===4){px(c,34,y,'#888');px(c,35,y,'#999')}
-      // Edge shadow
-      px(c,30,y,'#b0a490');px(c,41,y,'#b0a490');
-      // Fine grain between base pixels
-      if(y%2===0){px(c,31,y,'#c8c0a8');px(c,40,y,'#c0b8a0')}
-    }
-    // Peeling bark
-    px(c,30,68,'#ccc');px(c,30,69,'#bbb');px(c,42,74,'#aaa');px(c,42,75,'#bbb');
-    px(c,30,80,'#ddd');px(c,29,81,'#ccc');
-    // Root flare
-    rc(c,27,92,3,4,'#bfb398');rc(c,42,92,3,4,'#bfb398');
-    px(c,26,94,'#c8bca0');px(c,45,94,'#c8bca0');
-    px(c,25,95,'#bfb398');px(c,46,95,'#bfb398');
-    // Knot detail
-    rc(c,34,72,4,4,'#888');rc(c,35,73,2,2,'#666');px(c,35,72,'#555');
-    // Canopy
-    hdCanopy(c,36,30,22,26,PAL.leaf1,dkL1,hlL1,0,[
-      [12,44,-1,1,5],[58,34,1,0,5],[14,56,-1,0,4]
-    ]);
-    hdDapples(c,34,24,18,20,10,110);
-    hdMoss(c,30,88,12,6,10);
-    // Small mushroom at base
-    px(c,43,90,'#8a7050');px(c,44,90,'#a08060');px(c,43,89,'#b09070');
+  // ===== SPRITELIB HD TREES (4× resolution) =====
+  // Bouleau
+  genSLTree('bou',144,208,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.44|0,tB=h-18,tW=14;
+    gSh(c,CX,h-14,26,6);dT(c,CX,tT,tB,tW,SLP.birchB,{flare:4});bMarks(c,CX,tT,tB,tW,42);pBark(c,CX,tT,tB,tW,55);
+    dKnot(c,CX+2,tT+(tB-tT)*.5|0,2);dRoots(c,CX,tB,tW,'#c8bca0','#ddd4c0','s');dMoss(c,CX,tB-7,tW+2);
+    dBr(c,[{x:CX-6,y:tT+10,dx:-1.2,dy:-.5,len:14,th:2},{x:CX+6,y:tT+6,dx:1.1,dy:-.6,len:18,th:2},{x:CX-4,y:tT+20,dx:-1.4,dy:-.3,len:10,th:2},{x:CX+5,y:tT+16,dx:1.3,dy:-.4,len:12,th:2}],'#c8bca0','#ddd4c0');
+    const cY=h*.22|0,cRX=w*.34|0,cRY=h*.2|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.birchL,{seed:42});
+    cB(c,CX,cY,cRX,cRY,SLP.birchL,{seed:42,wF:4,wA:.1});dMush2(c,CX+(tW/2|0)+7,tB+3);
   });
 
-  // ===== NOISETIER / HAZEL (72×104 HD) - Multi-stem, warm tones =====
-  mkHD('noi',72,104,(c)=>{
-    // Multi-stem trunk (3 thin stems)
-    const stemCols=['#7a5a30','#6a4a28','#8a6a38','#5a3a20'];
-    for(let y=55;y<96;y++){
-      for(let x=28;x<34;x++) px(c,x,y,stemCols[(x*3+y)%stemCols.length]);
-      for(let x=34;x<40;x++) px(c,x,y+2,stemCols[(x*5+y)%stemCols.length]);
-      for(let x=40;x<46;x++) px(c,x,y-1,stemCols[(x*7+y)%stemCols.length]);
-    }
-    rc(c,26,92,4,4,'#6a4a28');rc(c,44,90,4,4,'#6a4a28');
-    // Warm green canopy (rounder, lighter)
-    const noiLeaf=['#7acc70','#60b858','#8ad480','#55a050','#9ae090','#70c468'];
-    const noiDk=noiLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const noiHl=['#b0e8a8','#c8f0c0','#a0e098'];
-    hdCanopy(c,36,28,24,24,noiLeaf,noiDk,noiHl,42,[]);
-    // Catkins (hazel detail)
-    for(let i=0;i<4;i++){const cx2=20+i*12,cy2=42+i*3;px(c,cx2,cy2,'#c8b060');px(c,cx2,cy2+1,'#b8a050');px(c,cx2,cy2+2,'#a89040')}
-    hdDapples(c,34,24,18,18,8,170);
+  // Noisetier
+  genSLTree('noi',144,208,(c,w,h)=>{
+    const CX=w/2|0,tB=h-16;gSh(c,CX,h-12,24,5);
+    dMS(c,CX,tB,[{ox:-8,sy:h*.48|0,w:6},{ox:0,sy:h*.46|0,w:6},{ox:9,sy:h*.50|0,w:5}],SLP.hazelB);
+    fE(c,CX,tB-2,16,4,SLP.hazelB.b);fE(c,CX,tB-2,14,3,SLP.hazelB.l);dRoots(c,CX,tB,20,'#7a5a30','#8a6a38','s');
+    const cY=h*.22|0,cRX=w*.36|0,cRY=h*.2|0;
+    dCatkins(c,[[CX-cRX+6,cY+cRY-2],[CX-cRX+18,cY+cRY],[CX+cRX-10,cY+cRY-3],[CX+cRX-20,cY+cRY+2],[CX-4,cY+cRY+1]],88);
+    cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.hazelL,{seed:77});cB(c,CX,cY,cRX,cRY,SLP.hazelL,{seed:77,wF:3,wA:.08,ec:25});
+    cB(c,CX-5,cY-h*.04|0,cRX*.45|0,h*.1|0,{s:'#7acc70',b:'#8ad480',l:'#a8e8a0',h:'#c0f0b8'},{seed:120,ec:false});
   });
 
-  // ===== AULNE / ALDER (72×104 HD) - Dark bark, dark leaves =====
-  mkHD('aul',72,104,(c)=>{
-    // Dark straight trunk
-    const aulBark=['#4a3020','#3a2418','#5a3828','#3a2010','#4a3425'];
-    for(let y=54;y<96;y++){
-      for(let x=31;x<41;x++) px(c,x,y,aulBark[(x*3+y*7)%aulBark.length]);
-      px(c,31,y,'#2a1a10');px(c,40,y,'#2a1a10');
-      if(y%4===0)rc(c,33,y,3,1,'#5a4030');
-    }
-    rc(c,28,92,4,4,'#3a2418');rc(c,40,92,4,4,'#3a2418');
-    // Dark green canopy (oval, dense)
-    const aulLeaf=['#2a6a3a','#1a5a2a','#3a7a4a','#1a4a28','#2a5a38','#185020'];
-    const aulDk=aulLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const aulHl=['#4a8a5a','#5a9a6a','#3a7a50'];
-    hdCanopy(c,36,28,20,24,aulLeaf,aulDk,aulHl,77,[]);
-    // Small cones
-    px(c,28,48,'#5a3020');px(c,28,49,'#4a2818');px(c,44,50,'#5a3020');px(c,44,51,'#4a2818');
-    hdMoss(c,31,86,10,4,55);
+  // Aulne
+  genSLTree('aul',144,208,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.42|0,tB=h-18,tW=12;gSh(c,CX,h-14,22,5);
+    dT(c,CX,tT,tB,tW,SLP.alderB,{flare:3,furrows:true,fSp:5});dRoots(c,CX,tB,tW,'#4a3020','#5a3828','s');
+    dMoss(c,CX,tB-10,tW+4,{h:4});dMoss(c,CX,tB-5,tW+2,{h:2,c:'#40916c',cl:'#6abf8a'});
+    dBr(c,[{x:CX-5,y:tT+8,dx:-1.1,dy:-.5,len:12,th:2},{x:CX+5,y:tT+5,dx:1,dy:-.6,len:14,th:2},{x:CX-3,y:tT+18,dx:-1.3,dy:-.3,len:8,th:2},{x:CX+4,y:tT+14,dx:1.2,dy:-.35,len:10,th:2}],'#5a3828','#6a4838');
+    const cY=h*.22|0,cRX=w*.32|0,cRY=h*.2|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.alderL,{seed:33});
+    cB(c,CX,cY,cRX,cRY,SLP.alderL,{seed:33,wF:5,wA:.06,wA2:.04,ec:20});
+    dCones(c,[[CX-cRX+8,cY+cRY-6],[CX+cRX-10,cY+cRY-4],[CX-6,cY+cRY-2],[CX+12,cY+cRY-8]]);
   });
 
-  // ===== ÉRABLE / MAPLE (96×128 HD) - Warm autumn canopy =====
-  mkHD('era',96,128,(c)=>{
-    // Trunk with detailed bark
-    hdBark(c,36,80,24,44,PAL.trunk,3);
-    // Edge darkening
-    for(let y=80;y<120;y++){px(c,36,y,'#2a1a0a');px(c,59,y,'#2a1a0a');px(c,37,y,'#3a2a15');px(c,58,y,'#3a2a15')}
-    // Bark highlight
-    for(let y=82;y<116;y+=3) px(c,44,y,PAL.bark[y%PAL.bark.length]);
-    // Knot holes
-    rc(c,44,96,5,5,'#2a1a0a');rc(c,45,97,3,3,'#1a0e05');px(c,46,97,'#3a2a15');
-    rc(c,52,108,4,4,'#2a1a0a');px(c,53,109,'#3a2a15');
-    // Shelf fungus
-    rc(c,59,100,7,3,'#8a7a5a');rc(c,60,100,5,2,'#a89a7a');px(c,64,100,'#b0a080');px(c,63,101,'#c0b090');
-    // Root system
-    for(let i=0;i<5;i++){const rx=26+i*5,ry=118+(i%3);rc(c,rx,ry,7,6,'#5C3317');rc(c,rx+1,ry,'#6B4226');px(c,rx+2,ry+1,'#7a5033')}
-    for(let i=0;i<5;i++){const rx=56+i*5,ry=118+((i+1)%3);rc(c,rx,ry,7,6,'#5C3317');rc(c,rx+2,ry,'#6B4226')}
-    px(c,22,122,'#4a2e15');px(c,80,122,'#4a2e15');
-    // Moss on trunk
-    hdMoss(c,36,112,24,12,20);
-    // Ivy tendrils
-    for(let y=104;y<116;y+=2){px(c,59,y,'#40916c');px(c,60,y+1,'#2d6a4f');px(c,58,y+1,'#52b788')}
-    // Canopy — maple: warm green with autumn hints
-    const eraLeaf=['#4a9a50','#3a8a40','#5aaa60','#448a48','#60b068','#388038'];
-    const eraDk=eraLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const eraHl=['#80cc78','#90d888','#70c070','#a0e098'];
-    hdCanopy(c,48,38,36,36,eraLeaf,eraDk,eraHl,3,[
-      [10,56,-1,1,6],[84,46,1,0,6],[14,72,-1,0,5],[82,64,1,1,5]
-    ]);
-    // Maple samara seeds (winged)
-    px(c,18,52,'#90a840');px(c,19,51,'#80a030');px(c,82,48,'#90a840');px(c,83,47,'#80a030');
-    hdDapples(c,46,32,30,28,15,210);
-    // Inner depth shadow
-    for(let x=30;x<66;x+=3) px(c,x,55,'rgba(10,30,15,0.12)');
+  // Érable champêtre
+  genSLTree('era',192,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.4|0,tB=h-22,tW=20;gSh(c,CX,h-16,32,7);
+    dT(c,CX,tT,tB,tW,SLP.mapleB,{flare:5,furrows:true,fSp:7});dKnot(c,CX+3,tT+(tB-tT)*.4|0,3);
+    dRoots(c,CX,tB,tW,'#5C3317','#7A5033','m');dMoss(c,CX,tB-8,tW+4);dFungus2(c,CX+(tW/2|0)+2,tT+(tB-tT)*.5|0);
+    dBr(c,[{x:CX-8,y:tT+8,dx:-1.1,dy:-.5,len:20,th:3},{x:CX+8,y:tT+5,dx:1,dy:-.55,len:24,th:3},{x:CX-5,y:tT+22,dx:-1.3,dy:-.25,len:14,th:2},{x:CX+6,y:tT+18,dx:1.2,dy:-.3,len:16,th:2}],'#6B4226','#8a6040');
+    const cY=h*.18|0,cRX=w*.38|0,cRY=h*.2|0;cBs(c,CX+3,cY+4,cRX+3,cRY+3,SLP.mapleL,{seed:3});
+    cB(c,CX,cY,cRX,cRY,SLP.mapleL,{seed:3,wF:4,wA:.12,ec:35});
+    [[CX-cRX+10,cY+cRY-4],[CX+cRX-12,cY+cRY-6]].forEach(([x,y])=>{px(c,x,y,'#90a840');px(c,x+1,y-1,'#80a030')});
   });
 
-  // ===== PIN SYLVESTRE / SCOTS PINE (96×128 HD) - Conifer, triangular =====
-  mkHD('pin',96,128,(c)=>{
-    // Tall straight trunk (reddish-brown bark)
-    const pinBark=['#8a4a28','#7a3a20','#9a5a30','#6a3018','#8a5035'];
-    for(let y=60;y<124;y++){
-      for(let x=42;x<54;x++) px(c,x,y,pinBark[(x*3+y*7)%pinBark.length]);
-      px(c,42,y,'#5a2a15');px(c,53,y,'#5a2a15');
-      // Bark plates
-      if(y%5===0){rc(c,44,y,4,2,'#a06838');rc(c,48,y+1,3,1,'#905830')}
-    }
-    rc(c,38,120,6,4,'#7a3a20');rc(c,52,120,6,4,'#7a3a20');
-    // Triangular conifer canopy (needle clusters)
-    const pinLeaf=['#1a5a28','#145020','#1e6830','#185a25','#226a35','#105018'];
-    const pinDk=pinLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    // Bottom layer (widest)
-    dithEllipse(c,48,56,34,12,pinLeaf,20);
-    // Middle layer
-    dithEllipse(c,48,42,26,10,pinLeaf,30);
-    // Top layer
-    dithEllipse(c,48,30,18,9,pinLeaf,40);
-    // Peak
-    dithEllipse(c,48,20,10,7,pinLeaf,50);
-    // Dark shadows between layers
-    for(let x=22;x<74;x+=2){px(c,x,52,pinDk[x%pinDk.length]);px(c,x,38,pinDk[x%pinDk.length])}
-    // Highlight edges
-    for(let i=0;i<8;i++){px(c,16+i*3,56+i,'#2a7a3a');px(c,76-i*3,56+i,'#2a7a3a')}
-    // Pine cones
-    px(c,38,58,'#6a4020');px(c,38,59,'#5a3018');px(c,60,54,'#6a4020');px(c,60,55,'#5a3018');
+  // Pin sylvestre
+  genSLTree('pin',192,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.18|0,tB=h-20,tW=12;gSh(c,CX,h-14,22,5);
+    dT(c,CX,tT,tB,tW,SLP.pineB,{flare:2});dRoots(c,CX,tB,tW,'#7a3a20','#9a5a30','s');
+    coniferLayers(c,CX,[{y:h*.06|0,w:22,h:32},{y:h*.18|0,w:34,h:34},{y:h*.32|0,w:44,h:34},{y:h*.46|0,w:52,h:32},{y:h*.58|0,w:56,h:28}],SLP.pineL);
+    dCones(c,[[CX-20,h*.64|0],[CX+18,h*.6|0]]);
+    px(c,CX,h*.06|0,'#3d8b5e');px(c,CX-1,(h*.06|0)+1,'#2d6a4f');px(c,CX+1,(h*.06|0)+1,'#2d6a4f');
   });
 
-  // ===== FRÊNE / ASH (96×128 HD) - Light compound leaves =====
-  mkHD('fre',96,128,(c)=>{
-    // Pale grey bark
-    const freBark=['#8a8a80','#7a7a72','#9a9a90','#6a6a62','#a0a098'];
-    for(let y=78;y<122;y++){
-      for(let x=38;x<58;x++) px(c,x,y,freBark[(x*3+y*5)%freBark.length]);
-      px(c,38,y,'#5a5a52');px(c,57,y,'#5a5a52');
-      if(y%4===0)rc(c,42,y,8,1,'#707068');
-    }
-    rc(c,34,118,6,4,'#7a7a72');rc(c,56,118,6,4,'#7a7a72');
-    // Light green compound-leaf canopy (airy, less dense)
-    const freLeaf=['#5ab868','#4aaa58','#6ac878','#48a050','#72d080','#3a9848'];
-    const freDk=freLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const freHl=['#90e898','#a0f0a8','#80d888'];
-    hdCanopy(c,48,38,32,34,freLeaf,freDk,freHl,55,[
-      [14,58,-1,1,5],[82,42,1,0,5]
-    ]);
-    hdDapples(c,46,32,28,26,12,330);
-    // Compound leaf detail (pairs of small dots for pinnate leaves)
-    for(let i=0;i<6;i++){const lx=20+i*10,ly=48+i*2;px(c,lx,ly,'#80d888');px(c,lx+2,ly-1,'#80d888');px(c,lx+4,ly,'#70c878')}
+  // Frêne
+  genSLTree('fre',192,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.4|0,tB=h-22,tW=16;gSh(c,CX,h-16,28,6);
+    dT(c,CX,tT,tB,tW,SLP.ashB,{flare:4});dRoots(c,CX,tB,tW,'#7a7a72','#a0a098','s');
+    dBr(c,[{x:CX-7,y:tT+8,dx:-1.1,dy:-.5,len:18,th:2},{x:CX+7,y:tT+5,dx:1,dy:-.6,len:22,th:2},{x:CX-4,y:tT+22,dx:-1.3,dy:-.3,len:12,th:2},{x:CX+5,y:tT+16,dx:1.2,dy:-.4,len:14,th:2}],'#8a8a80','#a0a098');
+    const cY=h*.18|0,cRX=w*.36|0,cRY=h*.2|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.ashL,{seed:55});
+    cB(c,CX,cY,cRX,cRY,SLP.ashL,{seed:55,wF:4,wA:.1,ec:30});
+    for(let i=0;i<6;i++){const lx=CX-cRX+10+i*((cRX*2)/6|0);px(c,lx,cY+cRY-8+i%3,'#80d888');px(c,lx+2,cY+cRY-9+i%3,'#70c878')}
   });
 
-  // ===== CHÊNE / OAK (120×160 HD) =====
-  mkHD('che',120,160,(c)=>{
-    // Massive trunk
-    hdBark(c,42,88,36,64,PAL.trunk,7);
-    // Deep furrows
-    for(let y=90;y<148;y++){
-      px(c,42,y,'#1a0e05');px(c,77,y,'#1a0e05');
-      px(c,43,y,'#2a1a0a');px(c,76,y,'#2a1a0a');
-      if(y%6===0){px(c,50,y,'#8B7355');px(c,68,y,'#7A6548')}
-    }
-    // Knot holes
-    rc(c,52,108,7,7,'#2a1a0a');rc(c,53,109,5,5,'#1a0e05');px(c,54,110,'#3a2a15');px(c,56,111,'#3a2a15');
-    rc(c,66,124,5,5,'#2a1a0a');px(c,67,125,'#3a2a15');
-    // Shelf fungi
-    rc(c,77,112,9,4,'#8a7a5a');rc(c,78,112,7,3,'#a89a7a');px(c,84,113,'#b0a080');px(c,85,114,'#c0b090');
-    rc(c,42,128,7,4,'#7a6a4a');rc(c,43,128,5,3,'#988860');
-    // Root system
-    for(let i=0;i<8;i++){const rx=28+i*5,ry=144+(i%4);rc(c,rx,ry,8,7,'#5C3317');rc(c,rx+2,ry,'#6B4226')}
-    for(let i=0;i<7;i++){const rx=72+i*5,ry=144+((i+1)%4);rc(c,rx,ry,8,7,'#5C3317');rc(c,rx+2,ry+1,'#6B4226')}
-    // Moss extensively
-    hdMoss(c,42,136,36,20,30);
-    // Climbing moss
-    for(let y=124;y<140;y+=2){px(c,42,y,'#40916c');px(c,43,y+1,'#2d6a4f');px(c,44,y,'#52b788')}
-    for(let y=120;y<132;y+=2){px(c,77,y,'#40916c');px(c,76,y+1,'#2d6a4f')}
-    // Hanging moss strands
-    for(let i=0;i<5;i++){
-      const hx=44+i*8;
-      for(let j=0;j<5+i;j++) px(c,hx,142+j,['#3d8b5e','#2d6a4f','#1b4332','#244f38','#1b4332'][Math.min(j,4)]);
-    }
-    // Canopy
-    hdCanopy(c,60,42,48,42,PAL.leaf3,dkL3,hlL3,7,[
-      [10,60,-1,1,7],[108,48,1,0,7],[14,80,-1,0,6],[104,72,1,1,6],[6,38,-1,-1,5],[114,34,1,0,5]
-    ]);
-    hdDapples(c,58,36,40,34,20,310);
-    // Bioluminescent spots
-    [[16,42,'#7fdbca'],[100,36,'#7fdbca'],[8,28,'#6acebe'],[90,54,'#70e0d0'],[28,20,'#7fdbca'],[76,16,'#6acebe']].forEach(([x,y,col])=>{
-      px(c,x,y,col);px(c,x+1,y,col);px(c,x,y+1,`${col}80`);px(c,x-1,y,`${col}60`);
-    });
+  // Chêne
+  genSLTree('che',256,320,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.35|0,tB=h-28,tW=28;gSh(c,CX,h-20,48,10);
+    dT(c,CX,tT,tB,tW,SLP.oakB,{flare:12,furrows:true,fSp:5});
+    dKnot(c,CX+4,tT+(tB-tT)*.35|0,3);dKnot(c,CX-3,tT+(tB-tT)*.6|0,2);
+    dRoots(c,CX,tB,tW+8,'#5C3317','#7A5033','l');dMoss(c,CX,tB-12,tW+8,{h:5});
+    dFungus2(c,CX+(tW/2|0)+3,tT+(tB-tT)*.45|0);dFungus2(c,CX-(tW/2|0)-6,tT+(tB-tT)*.55|0);
+    dBr(c,[{x:CX-12,y:tT+10,dx:-1,dy:-.5,len:28,th:4,tp:8},{x:CX+12,y:tT+6,dx:1,dy:-.55,len:32,th:4,tp:8},{x:CX-8,y:tT+26,dx:-1.2,dy:-.2,len:20,th:3},{x:CX+9,y:tT+22,dx:1.1,dy:-.3,len:22,th:3},{x:CX+1,y:tT,dx:.1,dy:-1,len:16,th:3}],'#6B4226','#8a6040');
+    const cY=h*.15|0,cRX=w*.42|0,cRY=h*.18|0;cBs(c,CX+4,cY+5,cRX+4,cRY+4,SLP.oakL,{seed:99});
+    [{ox:0,oy:0,sx:1,sy:1},{ox:-.35,oy:-.25,sx:.55,sy:.55},{ox:.38,oy:-.18,sx:.52,sy:.5},{ox:-.15,oy:-.45,sx:.4,sy:.38},{ox:.2,oy:.3,sx:.45,sy:.4}].forEach((lb,i)=>{
+      cB(c,CX+(lb.ox*cRX|0),cY+(lb.oy*cRY|0),cRX*lb.sx|0,cRY*lb.sy|0,SLP.oakL,{seed:99+i*37,wF:4,wA:.1,ec:20})});
+    cB(c,CX-8,cY-cRY*.25|0,cRX*.35|0,cRY*.3|0,{s:'#2d6a4f',b:'#358a55',l:'#48a068',h:'#5aaf80'},{seed:200,ec:false});
+    dSparkle(c,[[CX-cRX*.6|0,cY-4],[CX+cRX*.5|0,cY+2],[CX-cRX*.3|0,cY-cRY*.6|0],[CX+cRX*.4|0,cY+cRY*.3|0]]);
   });
 
-  // ===== HÊTRE / BEECH (120×160 HD) - Smooth grey bark, dense canopy =====
-  mkHD('het',120,160,(c)=>{
-    // Smooth grey bark (distinctive!)
-    const hetBark=['#a0a098','#909088','#b0b0a8','#888880','#989890','#a8a8a0'];
-    for(let y=88;y<150;y++){
-      for(let x=44;x<76;x++) px(c,x,y,hetBark[(x*3+y*5)%hetBark.length]);
-      px(c,44,y,'#787870');px(c,75,y,'#787870');
-      // Very smooth - no deep furrows, just subtle color variation
-      if(y%6===0){rc(c,48,y,12,1,'#b0b0a8');rc(c,62,y+2,8,1,'#a0a098')}
-    }
-    // Smooth edges - no rough bark
-    for(let y=92;y<146;y++){px(c,45,y,'#9a9a92');px(c,74,y,'#9a9a92')}
-    // Root buttresses
-    for(let i=0;i<4;i++){const rx=36+i*6,ry=146+i%2;rc(c,rx,ry,8,6,'#888880');rc(c,rx+2,ry-1,4,2,'#a0a098')}
-    for(let i=0;i<4;i++){const rx=68+i*5,ry=146+(i+1)%2;rc(c,rx,ry,8,6,'#888880')}
-    // Dense dark canopy
-    const hetLeaf=['#1a4a28','#124020','#224e30','#183a22','#2a5838','#103818'];
-    const hetDk=hetLeaf.map(c2=>{const r=parseInt(c2.slice(1,3),16),g=parseInt(c2.slice(3,5),16),b=parseInt(c2.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const hetHl=['#3a6a48','#4a7a58','#2a5a3a'];
-    hdCanopy(c,60,42,46,40,hetLeaf,hetDk,hetHl,88,[
-      [12,64,-1,1,7],[106,54,1,0,7],[8,80,-1,0,6],[100,72,1,1,6]
-    ]);
-    hdDapples(c,58,36,38,32,16,440);
-    // Beech nuts
-    px(c,22,68,'#6a4a20');px(c,22,69,'#5a3a18');px(c,96,62,'#6a4a20');px(c,96,63,'#5a3a18');
-    // Lichen patches on smooth bark
-    for(let i=0;i<5;i++){const lx=48+i*5,ly=102+i*8;px(c,lx,ly,'#8a9a70');px(c,lx+1,ly,'#7a8a60');px(c,lx,ly+1,'#6a7a58')}
+  // Hêtre
+  genSLTree('het',256,320,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.35|0,tB=h-26,tW=26;gSh(c,CX,h-18,44,9);
+    dT(c,CX,tT,tB,tW,SLP.beechB,{flare:8});
+    for(let y=tT+5;y<tB-5;y+=8)rc(c,CX-(tW/2|0)+3,y,tW-6,1,SLP.beechB.h);
+    dRoots(c,CX,tB,tW+4,'#888880','#a0a098','m');
+    dBr(c,[{x:CX-10,y:tT+10,dx:-1,dy:-.5,len:26,th:4,tp:8},{x:CX+10,y:tT+6,dx:1,dy:-.55,len:30,th:4,tp:8},{x:CX-6,y:tT+24,dx:-1.2,dy:-.25,len:18,th:3},{x:CX+7,y:tT+20,dx:1.1,dy:-.3,len:20,th:3}],'#909088','#b0b0a8');
+    const cY=h*.15|0,cRX=w*.4|0,cRY=h*.18|0;cBs(c,CX+3,cY+4,cRX+3,cRY+3,SLP.beechL,{seed:88});
+    cB(c,CX,cY,cRX,cRY,SLP.beechL,{seed:88,wF:4,wA:.08,ec:32});
+    [[CX-cRX+12,cY+cRY-8],[CX+cRX-14,cY+cRY-6]].forEach(([x,y])=>{px(c,x,y,'#6a4a20');px(c,x,y+1,'#5a3a18')});
+    for(let i=0;i<4;i++){const lx=CX-(tW/4|0)+i*5,ly=tT+(tB-tT)*.4+i*12|0;px(c,lx,ly,'#8a9a70');px(c,lx+1,ly,'#7a8a60')}
   });
 
-  // ===== IF MILLÉNAIRE (128×160 HD) — dark, ancient yew =====
-  mkHD('ifs',128,160,(c)=>{
-    // Twisted dark trunk
-    const ifsBark=['#3a2818','#2e2010','#4a3820','#352a18','#3e3020','#2a1e10'];
-    hdBark(c,46,88,36,68,ifsBark,77);
-    for(let y=90;y<152;y++){px(c,46,y,'#2a1e10');px(c,81,y,'#2a1e10')}
-    // Twisted root bulges
-    for(let i=0;i<3;i++){const rx=38+i*10,ry=144;rc(c,rx,ry,12,8,ifsBark[i%ifsBark.length])}
-    // Dark green needles canopy
-    const ifsLeaf=['#1a3a18','#0e2a10','#224a22','#163218','#2a4a28','#0a2008'];
-    const ifsDk=ifsLeaf.map(cl=>{const r=parseInt(cl.slice(1,3),16),g=parseInt(cl.slice(3,5),16),b=parseInt(cl.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const ifsHl=['#3a5a38','#4a6a48','#2a4a2a'];
-    hdCanopy(c,64,44,50,40,ifsLeaf,ifsDk,ifsHl,77,[]);
-    hdDapples(c,62,38,42,34,14,377);
-    // Red berries (yew characteristic)
-    const berryPos=[[30,58],[94,52],[26,70],[98,64],[40,40],[86,46]];
-    berryPos.forEach(([bx,by])=>{px(c,bx,by,'#cc2020');px(c,bx+1,by,'#aa1818');px(c,bx,by+1,'#881010')});
+  // If millénaire
+  genSLTree('ifs',256,320,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.35|0,tB=h-26,tW=26;gSh(c,CX,h-18,42,9);
+    dT(c,CX,tT,tB,tW,SLP.yewB,{flare:10,furrows:true,fSp:5});
+    dRoots(c,CX,tB,tW+6,'#3a2818','#4a3820','l');
+    dBr(c,[{x:CX-10,y:tT+12,dx:-1,dy:-.45,len:24,th:3,tp:8},{x:CX+10,y:tT+8,dx:1,dy:-.5,len:28,th:3,tp:8}],'#3a2818','#4a3820');
+    const cY=h*.16|0,cRX=w*.4|0,cRY=h*.18|0;cBs(c,CX+3,cY+4,cRX+3,cRY+3,SLP.yewL,{seed:77});
+    cB(c,CX,cY,cRX,cRY,SLP.yewL,{seed:77,wF:5,wA:.08,ec:30});
+    dBerries(c,[[CX-cRX+14,cY+8],[CX+cRX-16,cY+4],[CX-cRX+20,cY+cRY-10],[CX+cRX-22,cY+cRY-8],[CX-8,cY-cRY+8],[CX+12,cY-cRY+12]]);
   });
 
-  // ===== TILLEUL ANCIEN (128×160 HD) — wide spreading crown =====
-  mkHD('til',128,160,(c)=>{
-    const tilBark=['#7a6848','#6a5838','#8a7858','#5a4830','#6e5c42','#8a7a5a'];
-    hdBark(c,48,90,32,64,tilBark,55);
-    for(let y=92;y<150;y++){px(c,48,y,'#5a4830');px(c,79,y,'#5a4830')}
-    // Wide spreading canopy (lime/linden-like)
-    const tilLeaf=['#5aaa40','#4a9a30','#6aba50','#3a8a28','#78c860','#50a038'];
-    const tilDk=tilLeaf.map(cl=>{const r=parseInt(cl.slice(1,3),16),g=parseInt(cl.slice(3,5),16),b=parseInt(cl.slice(5,7),16);return`rgb(${r>>1},${g>>1},${b>>1})`});
-    const tilHl=['#8ada70','#9aea80','#7aca60'];
-    hdCanopy(c,64,38,55,36,tilLeaf,tilDk,tilHl,55,[]);
-    hdCanopy(c,42,50,28,22,tilLeaf,tilDk,tilHl,56,[]); // secondary crown
-    hdCanopy(c,86,48,26,20,tilLeaf,tilDk,tilHl,57,[]); // right sub-crown
-    hdDapples(c,64,34,48,30,18,255);
-    // Small yellow flowers (linden blossom)
-    for(let i=0;i<8;i++){const fx=30+i*9,fy=30+Math.floor(Math.sin(i*3)*12)+10;px(c,fx,fy,'#e8e060');px(c,fx+1,fy,'#d8d050')}
+  // Tilleul
+  genSLTree('til',256,320,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.36|0,tB=h-26,tW=24;gSh(c,CX,h-18,50,10);
+    dT(c,CX,tT,tB,tW,SLP.lindenB,{flare:6});dRoots(c,CX,tB,tW,'#6a5838','#8a7858','m');
+    dBr(c,[{x:CX-10,y:tT+10,dx:-1.1,dy:-.4,len:30,th:4,tp:8},{x:CX+10,y:tT+6,dx:1,dy:-.5,len:34,th:4,tp:8},{x:CX-6,y:tT+24,dx:-1.3,dy:-.2,len:20,th:3},{x:CX+7,y:tT+20,dx:1.2,dy:-.25,len:22,th:3}],'#7a6848','#8a7858');
+    const cY=h*.14|0,cRX=w*.44|0,cRY=h*.16|0;cBs(c,CX+3,cY+4,cRX+3,cRY+3,SLP.lindenL,{seed:55});
+    cB(c,CX,cY,cRX,cRY,SLP.lindenL,{seed:55,wF:3,wA:.1,ec:35});
+    cB(c,CX-cRX*.35|0,cY+cRY*.3|0,cRX*.45|0,cRY*.55|0,SLP.lindenL,{seed:56,wF:3,ec:15});
+    cB(c,CX+cRX*.38|0,cY+cRY*.25|0,cRX*.42|0,cRY*.5|0,SLP.lindenL,{seed:57,wF:3,ec:15});
+    dFlowers(c,[[CX-30,cY+8],[CX+25,cY+12],[CX-10,cY-cRY+10],[CX+35,cY+4],[CX-40,cY+20],[CX+15,cY-5]],'#e8e060');
   });
 
-  // ===== SÉQUOIA (128×168 HD) — massive, towering =====
-  mkHD('seq',128,168,(c)=>{
-    // Massive reddish trunk
-    const seqBark=['#8a3020','#7a2818','#9a3828','#6a2010','#8a4030','#5a1808'];
-    hdBark(c,40,80,48,84,seqBark,99);
-    for(let y=82;y<160;y++){px(c,40,y,'#5a1808');px(c,87,y,'#5a1808')}
-    // Buttress roots
-    for(let i=0;i<5;i++){const rx=30+i*12,ry=156;rc(c,rx,ry,14,8,'#6a2010');rc(c,rx+2,ry-2,10,4,'#7a2818')}
-    // Massive dark canopy
-    const seqLeaf=['#1a3818','#0e2a10','#224820','#163016','#0a2008','#1e3a1a'];
-    const seqDk=seqLeaf.map(cl=>{const r=parseInt(cl.slice(1,3),16),g=parseInt(cl.slice(3,5),16),b=parseInt(cl.slice(5,7),16);return`rgb(${Math.floor(r*.4)},${Math.floor(g*.4)},${Math.floor(b*.4)})`});
-    const seqHl=['#2a4a28','#3a5a38','#1a3a1a'];
-    hdCanopy(c,64,30,58,30,seqLeaf,seqDk,seqHl,99,[]);
-    hdCanopy(c,64,55,48,28,seqLeaf,seqDk,seqHl,100,[]);
-    hdDapples(c,64,28,50,26,20,499);
-    // Scale marks on bark (redwood characteristic)
-    for(let y=86;y<155;y+=6){rc(c,44,y,40,1,'#5a1808')}
+  // Séquoia
+  genSLTree('seq',256,336,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.3|0,tB=h-28,tW=36;gSh(c,CX,h-20,52,12);
+    dT(c,CX,tT,tB,tW,SLP.seqB,{flare:14,furrows:true,fSp:5});
+    for(let y=tT+8;y<tB-8;y+=6)rc(c,CX-(tW/2|0)+2,y,tW-4,1,SLP.seqB.s);
+    dRoots(c,CX,tB,tW+10,'#6a2010','#8a3020','l');
+    dBr(c,[{x:CX-14,y:tT+12,dx:-.9,dy:-.5,len:26,th:5,tp:6},{x:CX+14,y:tT+8,dx:.9,dy:-.55,len:30,th:5,tp:6},{x:CX-10,y:tT+30,dx:-1.1,dy:-.2,len:18,th:4},{x:CX+11,y:tT+26,dx:1,dy:-.25,len:20,th:4}],'#8a3020','#9a3828');
+    const cY=h*.12|0,cRX=w*.42|0,cRY=h*.16|0;cBs(c,CX+4,cY+5,cRX+4,cRY+4,SLP.seqL,{seed:99});
+    cB(c,CX,cY,cRX,cRY,SLP.seqL,{seed:99,wF:5,wA:.08,ec:35});
+    cB(c,CX,cY+cRY*1.1|0,cRX*.85|0,cRY*.8|0,SLP.seqL,{seed:100,wF:4,ec:25});
   });
 
-  // ===== BOIS PÉTRIFIÉ (128×160 HD) — stone-like dead tree =====
-  mkHD('pet',128,160,(c)=>{
-    // Grey-white petrified trunk
-    const petBark=['#9a9890','#8a8880','#a8a8a0','#7a7a72','#b0b0a8','#8a8a82'];
-    for(let y=60;y<152;y++)for(let x=44;x<84;x++){
-      const ci=Math.abs((x*5+y*3+33)%petBark.length);
-      px(c,x,y,petBark[ci]);
-      // Crystalline fracture lines
-      if((x*7+y*11)%23===0)px(c,x,y,'#c8c8c0');
-      if((x*13+y*3)%31===0)px(c,x,y,'#6a6a62');
-    }
-    for(let y=62;y<150;y++){px(c,44,y,'#6a6a62');px(c,83,y,'#6a6a62')}
-    // Broken branches (no leaves - petrified)
-    rc(c,30,80,18,4,'#8a8880');rc(c,82,72,16,4,'#9a9890');
-    rc(c,26,90,12,3,'#7a7a72');rc(c,88,85,14,3,'#8a8880');
-    // Crystal growths (unique to petrified)
-    const crystalPos=[[48,70],[76,66],[42,100],[80,95],[52,120],[74,115]];
-    crystalPos.forEach(([cx,cy])=>{
-      px(c,cx,cy,'#a0c0d0');px(c,cx+1,cy-1,'#b0d0e0');px(c,cx,cy-2,'#80a0b0');
-      px(c,cx+1,cy-3,'#90b0c0');
-    });
-    // Faint mineral veins
-    for(let i=0;i<6;i++){
-      let vx=48+Math.floor(Math.random()*32),vy=70+i*12;
-      for(let j=0;j<8;j++){px(c,vx,vy,'rgba(160,190,200,0.3)');vx+=Math.floor(Math.random()*3)-1;vy++}
-    }
+  // Bois pétrifié
+  genSLTree('pet',256,320,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.25|0,tB=h-24,tW=30;gSh(c,CX,h-16,40,8);
+    dT(c,CX,tT,tB,tW,SLP.petB,{flare:6});
+    const rng=sr(33);for(let i=0;i<12;i++){const fx=CX-(tW/2|0)+3+(rng()*(tW-6)|0),fy=tT+10+(rng()*(tB-tT-20)|0);for(let j=0;j<6;j++)px(c,fx+(rng()*3-1|0),fy+j,j%2?'#c8c8c0':'#6a6a62')}
+    dBr(c,[{x:CX-12,y:tT+20,dx:-1,dy:-.3,len:16,th:3},{x:CX+12,y:tT+14,dx:1,dy:-.4,len:18,th:3},{x:CX-8,y:tT+40,dx:-1.1,dy:-.1,len:12,th:2},{x:CX+9,y:tT+35,dx:1,dy:-.15,len:14,th:2}],'#8a8880','#a8a8a0');
+    dCrystals(c,[[CX-8,tT+30],[CX+10,tT+24],[CX-6,tT+50],[CX+12,tT+45],[CX-4,tT+70],[CX+8,tT+65]]);
+    for(let i=0;i<6;i++){let vx=CX-10+(rng()*20|0),vy=tT+20+i*20;for(let j=0;j<8;j++){px(c,vx,vy,'rgba(160,190,200,0.3)');vx+=(rng()*3-1|0);vy++}}
   });
 
-  // ===== PRIMORDIAL TREE (192x200) - Massive ancient tree, golden bark, luminous canopy =====
-  mkHD('prim',192,200,(c)=>{
-    // Enormous trunk - golden-brown with deep grooves
-    const tw=48,tx=72;
-    for(let y=70;y<200;y++){
-      const w=tw+Math.sin(y*.02)*8;
-      const x=tx+(48-w)/2;
-      c.fillStyle=`hsl(${38+Math.sin(y*.05)*5},${55+Math.sin(y*.03)*10}%,${30+Math.sin(y*.07)*8}%)`;
-      c.fillRect(x,y,w,1);
-    }
-    // Deep bark grooves
-    c.fillStyle='rgba(40,25,10,0.5)';
-    for(let i=0;i<12;i++){
-      const gx=tx+8+Math.random()*32, gy=80+Math.random()*110;
-      c.fillRect(gx,gy,2,15+Math.random()*20);
-    }
-    // Golden light veins in bark
-    c.fillStyle='rgba(255,215,0,0.3)';
-    for(let i=0;i<8;i++){
-      const gx=tx+10+Math.random()*28, gy=90+Math.random()*90;
-      c.fillRect(gx,gy,1,20+Math.random()*30);
-    }
-    // Massive root system
-    c.fillStyle='#5a3a1a';
-    for(let i=0;i<6;i++){
-      const angle=(i/6)*Math.PI+0.3;
-      for(let r=0;r<40;r++){
-        const rx=96+Math.cos(angle)*r*1.5, ry=185+Math.sin(angle)*r*.5+Math.sin(r*.3)*3;
-        const w=8-r*.15;
-        if(w>0)c.fillRect(rx-w/2,ry,w,3);
-      }
-    }
-    // Canopy - massive, golden-green, luminous
-    for(let layer=0;layer<5;layer++){
-      const ly=15+layer*12;
-      const lw=160-layer*8;
-      const lx=(192-lw)/2;
-      for(let j=0;j<50;j++){
-        const cx=lx+Math.random()*lw, cy=ly+Math.random()*20;
-        const r=8+Math.random()*12;
-        const hue=80+Math.random()*40+layer*5;
-        const lit=35+Math.random()*25+layer*3;
-        c.fillStyle=`hsla(${hue},60%,${lit}%,0.7)`;
-        c.beginPath();c.arc(cx,cy,r,0,Math.PI*2);c.fill();
-      }
-    }
-    // Golden glow particles in canopy
-    c.fillStyle='rgba(255,215,0,0.5)';
-    for(let i=0;i<20;i++){
-      const gx=30+Math.random()*132, gy=10+Math.random()*55;
-      c.fillRect(gx,gy,3,3);
-    }
-    // Crown highlight
-    c.fillStyle='rgba(255,255,200,0.15)';
-    c.beginPath();c.arc(96,35,50,0,Math.PI*2);c.fill();
+  // Primordial
+  genSLTree('prim',384,400,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.28|0,tB=h-30,tW=40;gSh(c,CX,h-22,60,14);
+    dT(c,CX,tT,tB,tW,{s:'#4a2a10',b:'#6a4020',l:'#8a5a30',h:'#aa7a48'},{flare:16,furrows:true,fSp:6});
+    dGoldVeins(c,CX-4,tT+20,tB-20,tW);dGoldVeins(c,CX+6,tT+30,tB-10,tW);
+    dRoots(c,CX,tB,tW+14,'#5a3a1a','#7a5a30','l');dMoss(c,CX,tB-14,tW+10,{h:5,c:'#2d6a4f'});
+    dBr(c,[{x:CX-16,y:tT+10,dx:-.9,dy:-.5,len:32,th:5,tp:7},{x:CX+16,y:tT+6,dx:.9,dy:-.55,len:36,th:5,tp:7},{x:CX-10,y:tT+30,dx:-1.1,dy:-.2,len:24,th:4},{x:CX+12,y:tT+26,dx:1,dy:-.25,len:26,th:4},{x:CX,y:tT-2,dx:.05,dy:-1,len:20,th:4}],'#6a4020','#8a5a30');
+    const cY=h*.1|0,cRX=w*.42|0,cRY=h*.14|0;
+    cBs(c,CX+4,cY+6,cRX+4,cRY+4,{s:'#1a3010',b:'#1a3010',l:'#1a3010',h:'#1a3010'},{seed:111});
+    const primL={s:'#2a5020',b:'#3a7030',l:'#5a9a48',h:'#7aba68'};
+    cB(c,CX,cY,cRX,cRY,primL,{seed:111,wF:3,wA:.12,ec:40});
+    cB(c,CX,cY+cRY*.9|0,cRX*.8|0,cRY*.7|0,primL,{seed:112,wF:4,ec:25});
+    const rng=sr(111);for(let i=0;i<20;i++){const gx=CX-cRX*.4+rng()*cRX*.8|0,gy=cY-cRY*.3+rng()*cRY*.8|0;px(c,gx,gy,'rgba(255,215,0,0.35)');px(c,gx+1,gy,'rgba(255,215,0,0.2)')}
+    fE(c,CX-4,cY-cRY*.15|0,cRX*.3|0,cRY*.25|0,'rgba(255,255,200,0.08)');
+    dSparkle(c,[[CX-40,cY-8],[CX+35,cY-4],[CX-20,cY-cRY*.5|0],[CX+25,cY-cRY*.4|0],[CX,cY-cRY*.7|0]]);
   });
-  // ===== MARÉCAGE TREES =====
-  mkHD('ebe',96,128,(c)=>{
-    // Ébène - very dark, dense, almost black trunk
-    c.fillStyle='#0a0808';c.fillRect(36,50,24,78);c.fillStyle='#120e0c';c.fillRect(40,55,16,70);
-    // Dark canopy
-    for(let i=0;i<4;i++){for(let j=0;j<6;j++){
-      c.fillStyle=`hsl(${140+j*3},20%,${10+Math.random()*8}%)`;
-      c.beginPath();c.arc(28+j*8+i*2,15+i*12,10+Math.random()*6,0,Math.PI*2);c.fill();
-    }}
-    // Dark glow
-    c.fillStyle='rgba(20,0,40,0.2)';c.beginPath();c.arc(48,30,35,0,Math.PI*2);c.fill();
+  // ===== MARÉCAGE =====
+  // Ébène
+  genSLTree('ebe',192,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.35|0,tB=h-22,tW=18;gSh(c,CX,h-16,30,7);
+    dT(c,CX,tT,tB,tW,SLP.ebonyB,{flare:4});dRoots(c,CX,tB,tW,'#0a0808','#1a1414','s');
+    dBr(c,[{x:CX-7,y:tT+10,dx:-1,dy:-.5,len:16,th:2},{x:CX+7,y:tT+6,dx:1,dy:-.55,len:18,th:2}],'#1a1414','#2a2020');
+    const cY=h*.18|0,cRX=w*.35|0,cRY=h*.18|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.ebonyL,{seed:66});
+    cB(c,CX,cY,cRX,cRY,SLP.ebonyL,{seed:66,wF:4,wA:.08,ec:25});
+    fE(c,CX,cY,cRX*.6|0,cRY*.5|0,'rgba(20,0,40,0.12)');
   });
-  mkHD('pal',96,128,(c)=>{
-    // Palissandre - rich reddish-brown
-    c.fillStyle='#3a1820';c.fillRect(36,50,24,78);c.fillStyle='#4a2028';c.fillRect(40,55,16,70);
-    for(let i=0;i<4;i++){for(let j=0;j<5;j++){
-      c.fillStyle=`hsl(${340+j*4},30%,${20+Math.random()*12}%)`;
-      c.beginPath();c.arc(30+j*9+i*2,18+i*11,9+Math.random()*6,0,Math.PI*2);c.fill();
-    }}
+  // Palissandre
+  genSLTree('pal',192,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.35|0,tB=h-22,tW=18;gSh(c,CX,h-16,30,7);
+    dT(c,CX,tT,tB,tW,SLP.palB,{flare:4});dRoots(c,CX,tB,tW,'#3a1820','#5a2838','s');
+    dBr(c,[{x:CX-7,y:tT+10,dx:-1,dy:-.5,len:16,th:2},{x:CX+7,y:tT+6,dx:1,dy:-.55,len:18,th:2}],'#4a2028','#5a2838');
+    const cY=h*.18|0,cRX=w*.34|0,cRY=h*.18|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.palL,{seed:72});
+    cB(c,CX,cY,cRX,cRY,SLP.palL,{seed:72,wF:4,wA:.1,ec:25});
   });
-  mkHD('bdr',80,112,(c)=>{
-    // Bois de Rose - pinkish-brown, aromatic
-    c.fillStyle='#5a2a3a';c.fillRect(30,45,20,67);c.fillStyle='#6a3a48';c.fillRect(34,50,12,58);
-    for(let i=0;i<3;i++){for(let j=0;j<5;j++){
-      c.fillStyle=`hsl(${330+j*5},35%,${25+Math.random()*15}%)`;
-      c.beginPath();c.arc(25+j*7+i*2,15+i*10,8+Math.random()*5,0,Math.PI*2);c.fill();
-    }}
-    // Pink shimmer
-    c.fillStyle='rgba(200,100,150,0.1)';c.beginPath();c.arc(40,25,25,0,Math.PI*2);c.fill();
+  // Bois de Rose
+  genSLTree('bdr',160,224,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.36|0,tB=h-20,tW=14;gSh(c,CX,h-14,24,5);
+    dT(c,CX,tT,tB,tW,SLP.roseB,{flare:3});dRoots(c,CX,tB,tW,'#5a2a3a','#6a3a48','s');
+    dBr(c,[{x:CX-5,y:tT+8,dx:-1.1,dy:-.5,len:12,th:2},{x:CX+5,y:tT+5,dx:1,dy:-.55,len:14,th:2}],'#5a2a3a','#6a3a48');
+    const cY=h*.2|0,cRX=w*.32|0,cRY=h*.18|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.roseL,{seed:81});
+    cB(c,CX,cY,cRX,cRY,SLP.roseL,{seed:81,wF:3,wA:.08,ec:22});
+    fE(c,CX,cY,cRX*.5|0,cRY*.4|0,'rgba(200,100,150,0.06)');
   });
-  mkHD('cyp',80,128,(c)=>{
-    // Cyprès chauve - swamp cypress, bulbous base, wispy top
-    c.fillStyle='#3a4a2a';c.fillRect(32,40,16,88);
-    c.fillStyle='#4a3a20';c.fillRect(26,100,28,28); // buttressed base
-    for(let i=0;i<4;i++){for(let j=0;j<4;j++){
-      c.fillStyle=`hsl(${90+j*8},30%,${25+Math.random()*12}%)`;
-      c.beginPath();c.arc(30+j*6,10+i*12,7+Math.random()*4,0,Math.PI*2);c.fill();
-    }}
-    // Spanish moss
-    c.fillStyle='rgba(160,180,140,0.4)';
-    for(let i=0;i<5;i++){c.fillRect(24+i*8,30+Math.random()*20,2,12+Math.random()*8)}
+  // Cyprès chauve
+  genSLTree('cyp',160,256,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.2|0,tB=h-22,tW=12;gSh(c,CX,h-16,26,6);
+    dT(c,CX,tT,tB-20,tW,SLP.cypB,{flare:2});
+    fE(c,CX,tB-18,tW+6,8,SLP.cypB.b);fE(c,CX,tB-18,tW+4,6,SLP.cypB.l);
+    dRoots(c,CX,tB,tW+10,'#3a4a2a','#4a5a3a','m');
+    coniferLayers(c,CX,[{y:h*.06|0,w:16,h:28},{y:h*.16|0,w:22,h:28},{y:h*.28|0,w:28,h:28},{y:h*.4|0,w:32,h:26}],SLP.cypL);
+    dSpMoss(c,[[CX-14,h*.22|0],[CX+12,h*.3|0],[CX-10,h*.38|0],[CX+16,h*.18|0],[CX-8,h*.44|0]],10);
   });
-  mkHD('man',64,96,(c)=>{
-    // Mangrove - tangled roots, thin trunk
-    c.fillStyle='#3a3020';
-    // Aerial roots
-    for(let i=0;i<5;i++){
-      const rx=15+i*8;c.fillRect(rx,40,3,56);c.fillRect(rx-2,80,7,16);
+  // Mangrove
+  genSLTree('man',128,192,(c,w,h)=>{
+    const CX=w/2|0,tB=h-16;gSh(c,CX,h-10,22,5);
+    const roots=[{ox:-14,w:3},{ox:-7,w:3},{ox:0,w:4},{ox:8,w:3},{ox:15,w:3}];
+    for(const r of roots){const sx=CX+r.ox;
+      for(let y=h*.35|0;y<tB;y++){const curve=Math.sin((y-h*.35)*.04)*3;
+        rc(c,sx+curve|0,y,r.w,1,y>tB-10?SLP.manB.s:SLP.manB.l)}
+      rc(c,sx-2,tB-4,r.w+4,3,SLP.manB.b);
     }
-    c.fillStyle='#4a5a2a';
-    for(let i=0;i<3;i++){for(let j=0;j<4;j++){
-      c.fillStyle=`hsl(${100+j*8},35%,${28+Math.random()*10}%)`;
-      c.beginPath();c.arc(20+j*7,8+i*10,6+Math.random()*3,0,Math.PI*2);c.fill();
-    }}
+    const cY=h*.2|0,cRX=w*.38|0,cRY=h*.16|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.manL,{seed:90});
+    cB(c,CX,cY,cRX,cRY,SLP.manL,{seed:90,wF:3,wA:.08,ec:20});
   });
-  // ===== BORÉAL TREES =====
-  mkHD('epi',96,140,(c)=>{
-    // Épicéa de résonance - tall spruce with golden shimmer
-    c.fillStyle='#2a1a08';c.fillRect(40,60,16,80);
-    // Conical canopy
-    for(let i=0;i<8;i++){
-      const w=10+i*7,y2=10+i*14;
-      c.fillStyle=`hsl(${150+i*2},40%,${20+i*2}%)`;
-      c.fillRect(48-w/2,y2,w,12);
-    }
-    // Golden resonance shimmer
-    c.fillStyle='rgba(255,215,0,0.15)';
-    for(let i=0;i<8;i++){c.fillRect(30+Math.random()*36,15+Math.random()*80,2,3)}
-    c.fillStyle='rgba(255,255,200,0.08)';c.beginPath();c.arc(48,50,30,0,Math.PI*2);c.fill();
+  // ===== BORÉAL =====
+  // Épicéa de résonance
+  genSLTree('epi',192,280,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.22|0,tB=h-20,tW=12;gSh(c,CX,h-14,24,5);
+    dT(c,CX,tT,tB,tW,{s:'#1a0e04',b:'#2a1a08',l:'#3a2810',h:'#4a3818'},{flare:2});dRoots(c,CX,tB,tW,'#2a1a08','#3a2810','s');
+    coniferLayers(c,CX,[{y:h*.05|0,w:16,h:28},{y:h*.14|0,w:26,h:30},{y:h*.26|0,w:36,h:30},{y:h*.38|0,w:44,h:30},{y:h*.5|0,w:50,h:28},{y:h*.6|0,w:54,h:26},{y:h*.7|0,w:56,h:24}],SLP.spruceL);
+    const rng=sr(77);for(let i=0;i<10;i++){px(c,CX-20+rng()*40|0,h*.1+rng()*h*.6|0,'rgba(255,215,0,0.2)')}
+    fE(c,CX,h*.4|0,20,30,'rgba(255,255,200,0.04)');
   });
-  mkHD('mel',80,120,(c)=>{
-    // Mélèze - larch, deciduous conifer, lighter
-    c.fillStyle='#5a4020';c.fillRect(32,50,16,70);
-    for(let i=0;i<6;i++){
-      const w=8+i*6,y2=12+i*12;
-      c.fillStyle=`hsl(${80+i*4},45%,${35+i*3}%)`;
-      c.fillRect(40-w/2,y2,w,10);
-    }
+  // Mélèze
+  genSLTree('mel',160,240,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.2|0,tB=h-18,tW=12;gSh(c,CX,h-12,22,5);
+    dT(c,CX,tT,tB,tW,{s:'#3a2810',b:'#5a4020',l:'#6a5030',h:'#7a6040'},{flare:2});dRoots(c,CX,tB,tW,'#5a4020','#6a5030','s');
+    coniferLayers(c,CX,[{y:h*.08|0,w:14,h:24},{y:h*.18|0,w:22,h:26},{y:h*.3|0,w:30,h:26},{y:h*.42|0,w:36,h:24},{y:h*.52|0,w:40,h:22},{y:h*.62|0,w:42,h:20}],SLP.larchL);
   });
-  mkHD('sapb',80,120,(c)=>{
-    // Sapin boréal - classic fir
-    c.fillStyle='#3a2a10';c.fillRect(34,50,12,70);
-    for(let i=0;i<7;i++){
-      const w=8+i*6,y2=8+i*13;
-      c.fillStyle=`hsl(${140+i*3},40%,${18+i*2}%)`;
-      c.fillRect(40-w/2,y2,w,11);
-    }
-    // Snow caps
-    c.fillStyle='rgba(220,230,240,0.4)';
-    for(let i=0;i<4;i++){c.fillRect(40-3-i*3,10+i*13,6+i*6,3)}
+  // Sapin boréal
+  genSLTree('sapb',160,240,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.18|0,tB=h-18,tW=10;gSh(c,CX,h-12,20,5);
+    dT(c,CX,tT,tB,tW,{s:'#1a0e04',b:'#3a2a10',l:'#4a3818',h:'#5a4828'},{flare:2});dRoots(c,CX,tB,tW,'#3a2a10','#4a3818','s');
+    coniferLayers(c,CX,[{y:h*.05|0,w:12,h:24},{y:h*.14|0,w:20,h:26},{y:h*.26|0,w:28,h:26},{y:h*.38|0,w:34,h:26},{y:h*.5|0,w:40,h:24},{y:h*.6|0,w:44,h:22},{y:h*.7|0,w:46,h:20}],SLP.firL);
+    for(let i=0;i<4;i++){const sw=6+i*8,sy=(h*(.05+i*.12)|0)+2;rc(c,CX-sw/2|0,sy,sw,2,'rgba(220,230,240,0.35)')}
   });
-  mkHD('bpb',64,96,(c)=>{
-    // Bouleau pubescent - thin birch, white bark
-    c.fillStyle='#e0d8cc';c.fillRect(26,35,12,61);c.fillStyle='#c0b8a8';c.fillRect(28,38,8,55);
-    // Dark birch marks
-    c.fillStyle='#4a4a40';for(let i=0;i<5;i++){c.fillRect(27,42+i*10,10,2)}
-    for(let i=0;i<3;i++){for(let j=0;j<4;j++){
-      c.fillStyle=`hsl(${80+j*10},40%,${40+Math.random()*15}%)`;
-      c.beginPath();c.arc(22+j*7,8+i*10,5+Math.random()*3,0,Math.PI*2);c.fill();
-    }}
+  // Bouleau pubescent
+  genSLTree('bpb',128,192,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.38|0,tB=h-16,tW=10;gSh(c,CX,h-10,20,4);
+    dT(c,CX,tT,tB,tW,SLP.pbB,{flare:2});bMarks(c,CX,tT,tB,tW,55);
+    dRoots(c,CX,tB,tW,'#c8bca0','#ddd4c0','s');
+    dBr(c,[{x:CX-4,y:tT+8,dx:-1.1,dy:-.5,len:10,th:2},{x:CX+4,y:tT+5,dx:1,dy:-.55,len:12,th:2}],'#d4c8b0','#e0d8c0');
+    const cY=h*.2|0,cRX=w*.34|0,cRY=h*.18|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.pbL,{seed:60});
+    cB(c,CX,cY,cRX,cRY,SLP.pbL,{seed:60,wF:4,wA:.08,ec:20});
   });
-  mkHD('ero',80,112,(c)=>{
-    // Érable ondé - wavy figured maple, distinctive bark
-    c.fillStyle='#6a5028';c.fillRect(30,45,20,67);c.fillStyle='#7a6038';c.fillRect(34,50,12,58);
-    // Wavy figure pattern in bark
-    c.fillStyle='rgba(200,170,100,0.3)';
-    for(let i=0;i<8;i++){
-      c.fillRect(32+Math.sin(i*.8)*3,50+i*7,16,2);
-    }
-    // Golden autumn-tinged canopy
-    for(let i=0;i<3;i++){for(let j=0;j<5;j++){
-      const hue=30+j*15+Math.random()*20;
-      c.fillStyle=`hsl(${hue},50%,${35+Math.random()*15}%)`;
-      c.beginPath();c.arc(24+j*8,10+i*11,7+Math.random()*4,0,Math.PI*2);c.fill();
-    }}
-    // Golden shimmer
-    c.fillStyle='rgba(218,165,32,0.12)';c.beginPath();c.arc(40,25,25,0,Math.PI*2);c.fill();
+  // Érable ondé
+  genSLTree('ero',160,224,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.38|0,tB=h-20,tW=16;gSh(c,CX,h-14,26,6);
+    dT(c,CX,tT,tB,tW,SLP.eroB,{flare:4,furrows:true,fSp:8});
+    for(let i=0;i<8;i++){const wy=tT+10+i*((tB-tT-20)/8|0);rc(c,CX-(tW/2|0)+2,wy,tW-4,1,'rgba(200,170,100,0.35)')}
+    dRoots(c,CX,tB,tW,'#6a5028','#8a7048','s');
+    dBr(c,[{x:CX-6,y:tT+8,dx:-1.1,dy:-.5,len:16,th:2},{x:CX+6,y:tT+5,dx:1,dy:-.55,len:18,th:2}],'#7a6038','#8a7048');
+    const cY=h*.18|0,cRX=w*.36|0,cRY=h*.2|0;cBs(c,CX+2,cY+3,cRX+2,cRY+2,SLP.eroL,{seed:44});
+    cB(c,CX,cY,cRX,cRY,SLP.eroL,{seed:44,wF:3,wA:.1,ec:28});
+    const rng=sr(44);for(let i=0;i<8;i++){px(c,CX-cRX*.3+rng()*cRX*.6|0,cY-cRY*.2+rng()*cRY*.5|0,'rgba(218,165,32,0.25)')}
   });
 
 
-  // ===== SACRED TREE (128×168 HD) =====
-  mkHD('tj',128,168,(c)=>{
-    hdBark(c,48,100,32,60,PAL.trunk,11);
-    for(let y=102;y<156;y++){px(c,48,y,'#5C3317');px(c,79,y,'#5C3317')}
-    // Glowing rune carvings (elaborate)
-    const runes=[[52,108],[56,114],[54,120],[58,126],[52,132],[60,110],[50,124],[62,118],[54,138],[58,144],[52,150]];
-    runes.forEach(([rx,ry],i)=>{
-      const gc=['#FFD700','#DAA520','#E8C030','#FFF8DC'][i%4];
-      rc(c,rx,ry,3,2,gc);px(c,rx+1,ry+1,'#B8860B');
-      if(i%3===0){rc(c,rx-1,ry,1,2,gc)}
-      // Glow halo
-      px(c,rx-1,ry-1,`rgba(255,215,0,0.15)`);px(c,rx+3,ry-1,`rgba(255,200,0,0.12)`);
-      px(c,rx,ry+2,`rgba(255,220,50,0.1)`);
-    });
-    // Golden veins
-    for(let y=110;y<148;y++){
-      const n=Math.sin(y*2.7+11)*43758.5;
-      if((n-Math.floor(n))>.55){px(c,54,y,'#B8860B');px(c,55,y,'rgba(218,165,32,0.4)')}
-    }
-    // Golden roots
-    for(let i=0;i<6;i++){rc(c,28+i*6,156,8,6,'#8B6914');rc(c,30+i*6,156,4,4,'#a88020')}
-    for(let i=0;i<6;i++){rc(c,76+i*5,156,8,6,'#8B6914')}
-    // Golden canopy
-    hdCanopy(c,64,42,52,44,PAL.gold,dkGold,hlGold,11,[
-      [10,58,-1,1,7],[116,46,1,0,7],[14,76,-1,0,6],[112,68,1,1,6]
-    ]);
-    // Inner sacred radiance
-    dithEllipse(c,64,30,18,12,hlGold,17,false);
-    // Sparkle points
-    [[16,24],[108,28],[36,8],[88,10],[24,56],[110,44],[64,12],[48,16],[84,16],[8,40],[120,36],[64,4],[50,6],[78,6]].forEach(([sx,sy])=>{
-      px(c,sx,sy,'#FFFFFF');px(c,sx+1,sy,'#FFFFF0');px(c,sx,sy-1,'rgba(255,255,255,0.4)');
-    });
+  // Arbre sacré
+  genSLTree('tj',256,336,(c,w,h)=>{
+    const CX=w/2|0,tT=h*.36|0,tB=h-28,tW=26;gSh(c,CX,h-20,44,10);
+    dT(c,CX,tT,tB,tW,SLP.oakB,{flare:8,furrows:true,fSp:5});
+    const runeY=[];for(let i=0;i<10;i++)runeY.push([CX-2,tT+10+i*((tB-tT-20)/10|0)]);
+    dRunes(c,runeY);dGoldVeins(c,CX+2,tT+15,tB-10,tW);
+    dRoots(c,CX,tB,tW+6,'#8B6914','#B8860B','l');
+    dBr(c,[{x:CX-10,y:tT+10,dx:-1,dy:-.5,len:24,th:3,tp:8},{x:CX+10,y:tT+6,dx:1,dy:-.55,len:28,th:3,tp:8},{x:CX-6,y:tT+26,dx:-1.2,dy:-.2,len:16,th:3},{x:CX+7,y:tT+22,dx:1.1,dy:-.3,len:18,th:3}],'#6B4226','#8a6040');
+    const cY=h*.14|0,cRX=w*.42|0,cRY=h*.18|0;cBs(c,CX+3,cY+4,cRX+3,cRY+3,SLP.gold,{seed:11});
+    cB(c,CX,cY,cRX,cRY,SLP.gold,{seed:11,wF:4,wA:.1,ec:35});
+    fE(c,CX,cY-cRY*.2|0,cRX*.35|0,cRY*.3|0,'rgba(255,248,220,0.1)');
+    dSparkle(c,[[CX-cRX*.5|0,cY-8],[CX+cRX*.4|0,cY-4],[CX-cRX*.2|0,cY-cRY*.6|0],[CX+cRX*.3|0,cY-cRY*.5|0],[CX,cY-cRY*.8|0],[CX-cRX*.7|0,cY+4],[CX+cRX*.6|0,cY+8]]);
   });
 
   // ===== STUMP (44×28 HD) =====
@@ -4218,7 +4085,7 @@ function dObj(wx,wy){
   else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(wx+4,wy-12,56,52);X.fillStyle='#4a5a3a';X.fillRect(wx+8,wy-8,48,44);X.fillStyle='#2a3a1a';X.fillRect(wx+2,wy-16,60,8);X.fillStyle='#1a2a0a';X.fillRect(wx+24,wy+4,16,28);X.fillStyle='#52b788';X.fillRect(wx+6,wy-10,4,20)}
   else if(tile===TT.PRIM){
     // Primordial tree - extra large, pulsing glow
-    const primSpr=sprites['prim'];if(primSpr){
+    const primSpr=_s['prim'];if(primSpr){
       const pulse=Math.sin(gt*1.5)*.1+.9;
       X.globalAlpha=pulse;
       X.drawImage(primSpr,wx-32*SC,wy-168*SC,192*SC,200*SC);
