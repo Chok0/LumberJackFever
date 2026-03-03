@@ -365,8 +365,124 @@ function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap}
 function invFree(){return P.invCap-invUsed()}
 let cam={x:0,y:0},smCam={x:0,y:0};
 const K={};
-document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR'].includes(e.code)&&e.preventDefault();if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()}});
+document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()}});
 document.addEventListener('keyup',e=>{K[e.code]=false});
+
+// ============ AUDIO SYSTEM (8-bit chiptune) ============
+let _actx=null,_musicOn=true,_sfxOn=true,_musicVol=.25,_sfxVol=.4;
+let _musicGain=null,_sfxGain=null;
+function initAudio(){
+  if(_actx)return;
+  _actx=new(window.AudioContext||window.webkitAudioContext)();
+  _musicGain=_actx.createGain();_musicGain.gain.value=_musicVol;_musicGain.connect(_actx.destination);
+  _sfxGain=_actx.createGain();_sfxGain.gain.value=_sfxVol;_sfxGain.connect(_actx.destination);
+}
+// --- SFX primitives ---
+function sfxNote(freq,dur,type,vol,delay){
+  if(!_actx||!_sfxOn)return;
+  const t=_actx.currentTime+(delay||0);
+  const o=_actx.createOscillator(),g=_actx.createGain();
+  o.type=type||'square';o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime((vol||1)*_sfxVol,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  o.connect(g);g.connect(_sfxGain);
+  o.start(t);o.stop(t+dur);
+}
+function sfxNoise(dur,vol,delay){
+  if(!_actx||!_sfxOn)return;
+  const t=_actx.currentTime+(delay||0);
+  const buf=_actx.createBuffer(1,Math.floor(_actx.sampleRate*dur),_actx.sampleRate);
+  const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*(vol||.3);
+  const src=_actx.createBufferSource(),g=_actx.createGain();
+  src.buffer=buf;g.gain.setValueAtTime((vol||.3)*_sfxVol,t);
+  g.gain.linearRampToValueAtTime(0,t+dur);
+  src.connect(g);g.connect(_sfxGain);
+  src.start(t);
+}
+// --- SFX library ---
+function sfxChop(){sfxNote(220,.06,'square',.5);sfxNoise(.08,.25,.02);sfxNote(165,.04,'square',.3,.06)}
+function sfxTreeFall(){sfxNote(180,.1,'sawtooth',.4);sfxNote(120,.15,'sawtooth',.3,.08);sfxNote(80,.2,'sawtooth',.25,.18);sfxNoise(.25,.2,.3)}
+function sfxPickup(){sfxNote(523,.06,'square',.3);sfxNote(659,.06,'square',.3,.06);sfxNote(784,.1,'square',.35,.12)}
+function sfxSell(){sfxNote(440,.05,'triangle',.3);sfxNote(554,.05,'triangle',.3,.06);sfxNote(659,.05,'triangle',.3,.12);sfxNote(880,.12,'triangle',.35,.18)}
+function sfxHit(){sfxNote(120,.05,'sawtooth',.5);sfxNoise(.06,.3,.03);sfxNote(90,.08,'square',.3,.05)}
+function sfxPlayerHurt(){sfxNote(260,.08,'square',.4);sfxNote(200,.12,'square',.35,.06);sfxNote(150,.15,'sawtooth',.3,.14)}
+function sfxDeath(){sfxNote(300,.12,'square',.4);sfxNote(250,.12,'square',.35,.12);sfxNote(200,.15,'square',.3,.24);sfxNote(150,.2,'sawtooth',.25,.38)}
+function sfxShop(){sfxNote(330,.08,'triangle',.25);sfxNote(392,.08,'triangle',.25,.08);sfxNote(494,.12,'triangle',.3,.16)}
+function sfxMenuSelect(){sfxNote(660,.04,'square',.2);sfxNote(880,.06,'square',.25,.04)}
+function sfxCorruption(){sfxNote(80,.3,'sawtooth',.15);sfxNote(95,.25,'sawtooth',.12,.1);sfxNote(60,.35,'sawtooth',.1,.2)}
+function sfxPurify(){sfxNote(392,.1,'triangle',.3);sfxNote(494,.1,'triangle',.3,.1);sfxNote(587,.1,'triangle',.3,.2);sfxNote(784,.15,'triangle',.35,.3)}
+function sfxWolf(){sfxNote(200,.15,'sawtooth',.25);sfxNote(250,.2,'sawtooth',.3,.12);sfxNote(220,.25,'sawtooth',.2,.3)}
+function sfxFootstep(){sfxNoise(.03,.08);sfxNote(100+Math.random()*30,.02,'square',.06,.01)}
+function sfxLore(){sfxNote(440,.12,'triangle',.2);sfxNote(554,.12,'triangle',.25,.1);sfxNote(659,.15,'triangle',.3,.22);sfxNote(880,.2,'triangle',.2,.36)}
+function sfxContract(){sfxNote(330,.06,'square',.2);sfxNote(440,.06,'square',.25,.06);sfxNote(554,.08,'square',.3,.12);sfxNote(660,.1,'triangle',.3,.2)}
+
+// --- MUSIC ENGINE (8-bit folk/Nordic loop) ---
+let _musicPlaying=false,_musicTimer=null;
+const NOTE_FREQ={C3:131,D3:147,E3:165,F3:175,G3:196,A3:220,B3:247,
+  C4:262,D4:294,E4:330,F4:349,G4:392,A4:440,B4:494,
+  C5:523,D5:587,E5:659,F5:698,G5:784,A5:880,R:0};
+function playMusicNote(freq,dur,type,vol){
+  if(!_actx||!_musicOn||freq===0)return;
+  const t=_actx.currentTime;
+  const o=_actx.createOscillator(),g=_actx.createGain();
+  o.type=type||'square';o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime((vol||.12)*_musicVol,t);
+  g.gain.setValueAtTime((vol||.12)*_musicVol,t+dur*.7);
+  g.gain.linearRampToValueAtTime(0,t+dur*.95);
+  o.connect(g);g.connect(_musicGain);
+  o.start(t);o.stop(t+dur);
+}
+// Melody: Nordic folk feel in A minor, 4/4 time
+const MELODY=[
+  'A3','C4','E4','C4', 'A3','C4','E4','G4',
+  'F4','E4','D4','C4', 'D4','E4','C4','R',
+  'A3','C4','E4','A4', 'G4','E4','D4','C4',
+  'D4','F4','E4','D4', 'C4','D4','C4','A3',
+  'E4','G4','A4','G4', 'E4','D4','C4','D4',
+  'A3','B3','C4','E4', 'D4','C4','A3','R',
+  'C4','E4','G4','E4', 'F4','E4','D4','C4',
+  'A3','C4','D4','E4', 'C4','A3','A3','R',
+];
+// Bass line (root notes, longer)
+const BASS=[
+  'A3','A3','A3','A3', 'A3','A3','A3','A3',
+  'F3','F3','F3','F3', 'G3','G3','C3','C3',
+  'A3','A3','A3','A3', 'C3','C3','G3','G3',
+  'D3','D3','E3','E3', 'A3','A3','A3','A3',
+  'E3','E3','E3','E3', 'F3','F3','G3','G3',
+  'A3','A3','A3','A3', 'D3','D3','A3','A3',
+  'C3','C3','E3','E3', 'F3','F3','G3','G3',
+  'A3','A3','D3','D3', 'A3','A3','A3','A3',
+];
+let _mStep=0;
+const BPM=110,BEAT=60/BPM;
+function musicTick(){
+  if(!_actx||!_musicOn||!_musicPlaying)return;
+  const nLen=BEAT*.5; // eighth notes
+  // Melody
+  const mNote=MELODY[_mStep%MELODY.length];
+  if(mNote!=='R') playMusicNote(NOTE_FREQ[mNote],nLen*.9,'square',.14);
+  // Bass (every 2 melody notes)
+  if(_mStep%2===0){
+    const bNote=BASS[(_mStep/2|0)%BASS.length];
+    if(bNote!=='R') playMusicNote(NOTE_FREQ[bNote],nLen*1.8,'triangle',.1);
+  }
+  // Light percussion every 4 notes
+  if(_mStep%4===0) sfxNoise(.02,.04);
+  if(_mStep%4===2) sfxNoise(.015,.02);
+  _mStep++;
+  _musicTimer=setTimeout(musicTick,nLen*1000);
+}
+function startMusic(){
+  if(_musicPlaying)return;
+  initAudio();_musicPlaying=true;_mStep=0;musicTick();
+}
+function stopMusic(){_musicPlaying=false;if(_musicTimer){clearTimeout(_musicTimer);_musicTimer=null}}
+function toggleMusic(){if(_musicPlaying)stopMusic();else startMusic();return _musicPlaying}
+function toggleSfx(){_sfxOn=!_sfxOn;return _sfxOn}
+// Init audio on first user interaction
+document.addEventListener('click',function _aInit(){initAudio();startMusic();document.removeEventListener('click',_aInit)},{once:false});
+document.addEventListener('keydown',function _aInit2(){initAudio();if(!_musicPlaying)startMusic();document.removeEventListener('keydown',_aInit2)},{once:false});
 
 // ============ SPRITE SYSTEM ============
 const _s={};
@@ -3132,7 +3248,7 @@ function checkCorrTrigger(tx,ty){
         }
       });
       shake=.4;
-      ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');
+      ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');sfxCorruption();
     }
   }
 }
@@ -3207,7 +3323,7 @@ function spawnE(){
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
-function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){P.hp-=e.dmg;P.iv=1;P.ht=.3;shake=.5;sp(P.x,P.y,'#e74c3c',8);if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
+function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){P.hp-=e.dmg;P.iv=1;P.ht=.3;shake=.5;sp(P.x,P.y,'#e74c3c',8);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
 function updParts(d){
@@ -3475,7 +3591,7 @@ function spawnWolves(){
     _wolfSpawnT=gt+TUNING.wolfSpawnCooldown;
     // Howl notification if nearby
     if(dist<18){
-      ft2(P.x,P.y-1.5,'🐺 Hurlement dans la nuit...','#b0b0c0');
+      ft2(P.x,P.y-1.5,'🐺 Hurlement dans la nuit...','#b0b0c0');sfxWolf();
     }
     break;
   }
@@ -3530,7 +3646,7 @@ function updWolves(d){
     // Damage player on contact
     if(di<.8&&P.iv<=0){
       P.hp-=w.dmg;P.iv=.8;P.ht=.3;shake=.4;sp(P.x,P.y,'#8888aa',6);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
     }
     // Death
     if(w.hp<=0){
@@ -3615,7 +3731,7 @@ function updP2(d){
         if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.TJ){
           const lore=getSacredLore(nx2,ny2);
           if(lore){
-            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
+            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
             shopOn=true;curShop='SACRED';
             document.getElementById('shp').style.display='block';
             document.querySelector('#shp h2').textContent='🌳 Arbre Sacré';
@@ -3646,7 +3762,7 @@ function updP2(d){
         }
       }
       // Then check for buildings
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
     }
   }
   // Inventory toggle (I key)
@@ -3668,17 +3784,17 @@ function updP2(d){
   // Auto-collect herbs & mushrooms
   const ptx=Math.floor(P.x),pty=Math.floor(P.y);
   const ptile=map[pty]?.[ptx];
-  if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);}
-  if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);}
+  if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);sfxPickup();}
+  if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);sfxPickup();}
   const staRegen=TUNING.staRegen*(P._encens&&gt<P._encens?2:1);
   P.sta=Math.min(P.msta,P.sta+staRegen*d);P.ct=Math.max(0,P.ct-d);P.iv=Math.max(0,P.iv-d);P.ht=Math.max(0,P.ht-d);P.sw=Math.max(0,P.sw-d*10);
   if(K.Space&&P.ct<=0&&P.sta>TUNING.cutStaCost){
-    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;
+    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;sfxChop();
     // Scare wildlife on cut
     wildlife.forEach(w=>{const dx2=w.x-P.x,dy2=w.y-P.y;if(Math.sqrt(dx2*dx2+dy2*dy2)<TUNING.wildlifeNoiseFleeRadius){w.fleeing=true;w.fleeT=3+Math.random()*2;w.fleeX=w.x+(dx2>0?1:-1)*(8+Math.random()*6);w.fleeY=w.y+(dy2>0?1:-1)*(8+Math.random()*6)}});
     const dirs=[[0,-1],[1,0],[0,1],[-1,0]],dd=dirs[P.f];
     const tx=Math.floor(P.x+dd[0]),ty=Math.floor(P.y+dd[1]);
-    ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5)}});
+    ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5);sfxHit()}});
     wolves.forEach(w=>{const wx2=w.x-(P.x+dd[0]*.5),wy2=w.y-(P.y+dd[1]*.5);if(Math.sqrt(wx2*wx2+wy2*wy2)<1.5){w.hp-=P.pow;w.ht=.2;shake=.15;sp(w.x,w.y,'#aaaacc',5)}});
     // Lateral boss hit detection
     if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100}}}
@@ -3741,7 +3857,7 @@ function updP2(d){
           ft2(tx+.3,ty-.3,toAdd<=0?`🪵${w} perdu!`:`(${lost} perdu)`,'#e74c3c');
         }
         if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
-        map[ty][tx]=TT.ST;delete _th[hk];cuts++;
+        map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();
         // Track first corruption trigger
         checkCorrTrigger(tx,ty);
         sp(tx+.5,ty+.5,'#52b788',10);sp(tx+.5,ty+.3,'#c9a86c',8);shake=.3;
@@ -3962,7 +4078,7 @@ function updShop(){
     items=[];
     
     // 1. Basic sell — always available
-    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
+    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;sfxSell();ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
     
     // 2. Contract — timed specific wood request
     if(P._contract){
@@ -3991,7 +4107,7 @@ function updShop(){
           P.wv=Math.max(0,(P.wv||0)-delivered*(ess?.gold||1));
           ft2(P.x,P.y,`💰+${pay}`,'#DAA520');
           if(delivered>=ct.amount){
-            ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');
+            ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
             P._contract=null;
             P._contractsDone=(P._contractsDone||0)+1;
             generateContract(); // new contract immediately
@@ -4715,7 +4831,7 @@ function updBossEast(d){
   // Melee damage if too close
   if(dist<2 && P.iv<=0){
     P.hp-=b.dmg;P.iv=1;P.ht=.3;shake=.6;sp(P.x,P.y,'#2a6a4a',8);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
   }
 }
 
@@ -4790,7 +4906,7 @@ function updBossWest(d){
     if(b.chargeDist>8){b.charging=false;shake=.3;sp(b.x,b.y,'#6a4a2a',6)}
     if(dist<1.5 && P.iv<=0){
       P.hp-=b.dmg+2;P.iv=1.2;P.ht=.4;shake=1;sp(P.x,P.y,'#8a4a1a',12);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
     }
     return;
   }
@@ -4817,7 +4933,7 @@ function updBossWest(d){
   // Melee
   if(dist<1.5 && P.iv<=0 && !b.charging){
     P.hp-=b.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8a4a1a',8);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
   }
 }
 
@@ -4933,7 +5049,7 @@ function updGuardian(d){
   if(dist<1.2 && P.iv<=0){
     P.hp-=g.dmg;P.iv=1.2;P.ht=.4;shake=.8;
     sp(P.x,P.y,'#8b0000',10);
-    if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
   }
   
   // Root attack (phase 1+2)
@@ -4976,7 +5092,7 @@ function updBossEffects(d){
       const dx2=P.x-r.x,dy2=P.y-r.y;
       if(Math.sqrt(dx2*dx2+dy2*dy2)<1.5 && P.iv<=0){
         P.hp-=r.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8b0000',6);
-        if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+        sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
       }
       rootHazards.splice(i,1);
     }
@@ -4989,7 +5105,7 @@ function updBossEffects(d){
     if(Math.sqrt(dx3*dx3+dy3*dy3)<.8 && P.iv<=0){
       P.hp-=p.dmg;P.iv=.6;P.ht=.2;shake=.4;sp(P.x,P.y,'#6b2fa0',8);
       bossProjs.splice(i,1);
-      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
       continue;
     }
     if(p.life<=0)bossProjs.splice(i,1);
@@ -5109,7 +5225,7 @@ function performRitual(){
   // Must be at a sacred tree with sap
   if(P.sap<3){ft2(P.x,P.y,'Pas assez de s\u00e8ve (3 requises)','#e74c3c');return false}
   P.sap-=3;
-  P._ritualsPerformed++;
+  P._ritualsPerformed++;sfxPurify();
   ft2(P.x,P.y,'\ud83c\udf00 Rituel de purification!','#74c69d');
   sp(P.x,P.y,'#52b788',15);sp(P.x,P.y,'#ffd700',10);
   // Massive corruption reduction in radius 12
