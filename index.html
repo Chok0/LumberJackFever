@@ -136,9 +136,6 @@ const TUNING = {
   contractTimeLimit: 120,
   contractBonusMult: 2.0,
   contractLatePenalty: 0.5,
-  contractCooldown: 45,
-  contractMinAmount: 3,
-  contractMaxAmount: 8,
   // -- Herbs & Mushrooms --
   herbsForPotions: 5,
   mushsForEncens: 5,
@@ -189,9 +186,6 @@ const TUNING_META = {
   'contractTimeLimit': {min:60,max:600,step:30,cat:'Contrats',label:'Temps limite (s)'},
   'contractBonusMult': {min:1.2,max:4,step:0.2,cat:'Contrats',label:'Bonus prix (×)'},
   'contractLatePenalty': {min:0.1,max:0.9,step:0.1,cat:'Contrats',label:'Pénalité retard (×)'},
-  'contractCooldown': {min:10,max:180,step:10,cat:'Contrats',label:'Cooldown nouveau contrat'},
-  'contractMinAmount': {min:2,max:10,step:1,cat:'Contrats',label:'Quantité min'},
-  'contractMaxAmount': {min:5,max:25,step:1,cat:'Contrats',label:'Quantité max'},
 };
 let editorOpen = false;
 
@@ -334,7 +328,6 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   chestWood:0,chestSap:0, // stored in house chest
   woodByType:{}, // track wood per essence: {tileType: count}
   _contract:null, // {type,name,amount,pricePerUnit,deadline,acceptedAt}
-  _contractCooldown:0, // (legacy, unused)
   _contractsDone:0, // contracts completed — drives progression
   _sacredLore:[], // IDs of lore fragments already read
   _introSeen:false, // has seen intro cinematic
@@ -387,6 +380,7 @@ function sfxNote(freq,dur,type,vol,delay){
   g.gain.linearRampToValueAtTime(0,t+dur);
   o.connect(g);g.connect(_sfxGain);
   o.start(t);o.stop(t+dur);
+  o.onended=()=>{o.disconnect();g.disconnect()};
 }
 function sfxNoise(dur,vol,delay){
   if(!_actx||!_sfxOn)return;
@@ -397,7 +391,8 @@ function sfxNoise(dur,vol,delay){
   src.buffer=buf;g.gain.setValueAtTime((vol||.3)*_sfxVol,t);
   g.gain.linearRampToValueAtTime(0,t+dur);
   src.connect(g);g.connect(_sfxGain);
-  src.start(t);
+  src.start(t);src.stop(t+dur);
+  src.onended=()=>{src.disconnect();g.disconnect()};
 }
 // --- SFX library ---
 function sfxChop(){sfxNote(220,.06,'square',.5);sfxNoise(.08,.25,.02);sfxNote(165,.04,'square',.3,.06)}
@@ -431,6 +426,7 @@ function playMusicNote(freq,dur,type,vol){
   g.gain.linearRampToValueAtTime(0,t+dur*.95);
   o.connect(g);g.connect(_musicGain);
   o.start(t);o.stop(t+dur);
+  o.onended=()=>{o.disconnect();g.disconnect()};
 }
 // Melody: Nordic folk feel in A minor, 4/4 time
 const MELODY=[
@@ -481,8 +477,8 @@ function stopMusic(){_musicPlaying=false;if(_musicTimer){clearTimeout(_musicTime
 function toggleMusic(){if(_musicPlaying)stopMusic();else startMusic();return _musicPlaying}
 function toggleSfx(){_sfxOn=!_sfxOn;return _sfxOn}
 // Init audio on first user interaction
-document.addEventListener('click',function _aInit(){initAudio();startMusic();document.removeEventListener('click',_aInit)},{once:false});
-document.addEventListener('keydown',function _aInit2(){initAudio();if(!_musicPlaying)startMusic();document.removeEventListener('keydown',_aInit2)},{once:false});
+document.addEventListener('click',()=>{initAudio();startMusic()},{once:true});
+document.addEventListener('keydown',()=>{initAudio();if(!_musicPlaying)startMusic()},{once:true});
 
 // ============ SPRITE SYSTEM ============
 const _s={};
@@ -3323,9 +3319,10 @@ function spawnE(){
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
-function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){P.hp-=e.dmg;P.iv=1;P.ht=.3;shake=.5;sp(P.x,P.y,'#e74c3c',8);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
+function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')}ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
+function hurtP(dmg,iv,ht,shk,col,n){P.hp-=dmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}}
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
   for(let i=fts.length-1;i>=0;i--){fts[i].y-=d*1.5;fts[i].l-=d;if(fts[i].l<=0)fts.splice(i,1)}
@@ -3645,8 +3642,7 @@ function updWolves(d){
     }
     // Damage player on contact
     if(di<.8&&P.iv<=0){
-      P.hp-=w.dmg;P.iv=.8;P.ht=.3;shake=.4;sp(P.x,P.y,'#8888aa',6);
-      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+      hurtP(w.dmg,.8,.3,.4,'#8888aa',6);
     }
     // Death
     if(w.hp<=0){
@@ -3777,7 +3773,7 @@ function updP2(d){
   if(mx&&my){mx*=.707;my*=.707}
   let spd=P.spd;P.dt=Math.max(0,P.dt-d);P.dc=Math.max(0,P.dc-d);
   if(K.KeyC&&P.sta>20&&P.dc<=0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult;P.sta-=TUNING.dashStaCost*d;P.dt=.15}
-  if(mx||my)P.wa+=d*10;else P.wa=0;
+  if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
   if(nx>=.3&&nx<MW-.3&&!isS(map[Math.floor(P.y)][Math.floor(nx)]))P.x=nx;
   if(ny>=.3&&ny<MH-.3&&!isS(map[Math.floor(ny)][Math.floor(P.x)]))P.y=ny;
@@ -4072,7 +4068,7 @@ function updShop(){
     }else if(t===TT.EMIS){
     // Émissaire: sell wood, contracts, loans
     // Generate new contract if none active and cooldown expired
-    if(!P._contract && gt > P._contractCooldown) generateContract();
+    if(!P._contract) generateContract();
     
     const baseVal=P.wv||0;
     items=[];
@@ -4191,7 +4187,7 @@ function updShop(){
     else if(isContract)lbl='Signer';
     else lbl=it.c>=9999?'—':it.c+' or';
     d2.innerHTML=`<span>${it.n}</span><button class="sb" ${ok?'':'disabled'}>${lbl}</button>`;
-    d2.querySelector('button').onclick=()=>{if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell)P.g-=it.c;it.a();updShop()};
+    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell)P.g-=it.c;it.a();updShop()};
     co.appendChild(d2);
   });
 }
@@ -4830,8 +4826,7 @@ function updBossEast(d){
   }
   // Melee damage if too close
   if(dist<2 && P.iv<=0){
-    P.hp-=b.dmg;P.iv=1;P.ht=.3;shake=.6;sp(P.x,P.y,'#2a6a4a',8);
-    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+    hurtP(b.dmg,1,.3,.6,'#2a6a4a',8);
   }
 }
 
@@ -4905,8 +4900,7 @@ function updBossWest(d){
     b.chargeDist+=12*d;
     if(b.chargeDist>8){b.charging=false;shake=.3;sp(b.x,b.y,'#6a4a2a',6)}
     if(dist<1.5 && P.iv<=0){
-      P.hp-=b.dmg+2;P.iv=1.2;P.ht=.4;shake=1;sp(P.x,P.y,'#8a4a1a',12);
-      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+      hurtP(b.dmg+2,1.2,.4,1,'#8a4a1a',12);
     }
     return;
   }
@@ -4932,8 +4926,7 @@ function updBossWest(d){
   }
   // Melee
   if(dist<1.5 && P.iv<=0 && !b.charging){
-    P.hp-=b.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8a4a1a',8);
-    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+    hurtP(b.dmg,.8,.3,.5,'#8a4a1a',8);
   }
 }
 
@@ -5047,9 +5040,7 @@ function updGuardian(d){
   
   // Melee damage
   if(dist<1.2 && P.iv<=0){
-    P.hp-=g.dmg;P.iv=1.2;P.ht=.4;shake=.8;
-    sp(P.x,P.y,'#8b0000',10);
-    sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+    hurtP(g.dmg,1.2,.4,.8,'#8b0000',10);
   }
   
   // Root attack (phase 1+2)
@@ -5091,8 +5082,7 @@ function updBossEffects(d){
       sp(r.x,r.y,'#5a3a1a',8);shake=.2;
       const dx2=P.x-r.x,dy2=P.y-r.y;
       if(Math.sqrt(dx2*dx2+dy2*dy2)<1.5 && P.iv<=0){
-        P.hp-=r.dmg;P.iv=.8;P.ht=.3;shake=.5;sp(P.x,P.y,'#8b0000',6);
-        sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+        hurtP(r.dmg,.8,.3,.5,'#8b0000',6);
       }
       rootHazards.splice(i,1);
     }
@@ -5103,9 +5093,8 @@ function updBossEffects(d){
     p.x+=p.vx*d;p.y+=p.vy*d;p.life-=d;
     const dx3=P.x-p.x,dy3=P.y-p.y;
     if(Math.sqrt(dx3*dx3+dy3*dy3)<.8 && P.iv<=0){
-      P.hp-=p.dmg;P.iv=.6;P.ht=.2;shake=.4;sp(P.x,P.y,'#6b2fa0',8);
+      hurtP(p.dmg,.6,.2,.4,'#6b2fa0',8);
       bossProjs.splice(i,1);
-      sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
       continue;
     }
     if(p.life<=0)bossProjs.splice(i,1);
