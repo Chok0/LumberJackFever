@@ -4853,6 +4853,7 @@ const CONTRACT_ZONES={
   [TT.SEQ]:'la forêt primordiale — danger extrême',
   [TT.PET]:'la forêt primordiale — bois pétrifié rare',
 };
+function countTreeType(tt){let c=0;for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)if(map[y][x]===tt)c++;return c}
 function generateContract(){
   // Progression by contracts completed — volumes force upgrades, types push deeper
   const ci=P._contractsDone||0;
@@ -4891,6 +4892,25 @@ function generateContract(){
     const pool=[TT.IFS,TT.TIL,TT.SEQ,TT.PET,TT.HET];
     type=pool[ci%pool.length];
     amount=8+Math.floor((ci-22)*1.5);
+  }
+  // Check tree availability — swap type if too scarce
+  const held=(P.woodByType&&P.woodByType[type])||0;
+  const onMap=countTreeType(type);
+  if(held<amount&&onMap<Math.ceil(amount/2)){
+    const axeLvl=P.axeLvl||1;
+    const minAxe=ESS[type]?.minAxe||1;
+    const alts=CONTRACT_TYPES.filter(t=>{
+      if(t===type)return false;
+      const e=ESS[t];
+      return e&&e.minAxe<=axeLvl&&e.minAxe>=Math.max(1,minAxe-1)&&countTreeType(t)>=amount;
+    });
+    if(alts.length>0){
+      type=alts[Math.floor(Math.random()*alts.length)];
+    }else{
+      // Reduce amount to what's feasible
+      const feasible=onMap*(ESS[type]?.wood||1)+held;
+      if(feasible>=3)amount=Math.max(3,Math.min(amount,feasible));
+    }
   }
   const ess=ESS[type];
   if(!ess)return;
@@ -7367,6 +7387,16 @@ function updateEnding(){
 let _vilBarricade=false, _vilCarto=false, _vilAnthro=false, _vilLuthier=false;
 function evolveVillage(){
   const VIL_Y=MH-12, CX=128;
+  // Auto-expire contracts that are way overdue (2× original duration past deadline)
+  if(P._contract){
+    const ct=P._contract;
+    const origDur=ct.deadline-ct.acceptedAt;
+    if(gt>ct.deadline+origDur*2){
+      P._contract=null;
+      ft2(P.x,P.y,'📜 Contrat expiré...','#888');
+      generateContract();
+    }
+  }
   // Barricades after first corruption
   if(P._firstCorruption && !_vilBarricade){
     _vilBarricade=true;
@@ -7420,7 +7450,7 @@ function loop(ts){
   // Intro cinematic
   if(introActive){updateIntro(d);requestAnimationFrame(loop);return;}
   
-  if(!dead){gt+=d;if(!shopOn)dayPhase=(dayPhase+d*.001)%1} // time always advances, day/night pauses in shop
+  if(!dead){gt+=d;if(!shopOn){const nAcc=(dayPhase>.82||dayPhase<.14)?2.5:1;dayPhase=(dayPhase+d*.001*nAcc)%1}} // night passes faster (summer)
 
   updWind(d);updP2(d);updateDialogue(d);evolveVillage();  // Check corruption threshold for guardian alert
   if(!P._guardianAwake){
