@@ -132,6 +132,11 @@ const TUNING = {
   wolfNightThreshold: 0.3,   // nightMul above which wolves spawn
   wolfDawnFleeThreshold: 0.1,// nightMul below which wolves flee & despawn
   wolfSpawnCooldown: 30,     // seconds between spawn attempts
+  // -- Grandmother Health --
+  gmHealthDecay: 0.015,       // health loss per second (~1.5/min, dies in ~66min without meds)
+  gmMedicineCost: 25,         // gold cost per medicine dose
+  gmMedicineHeal: 40,         // health restored per dose
+  gmSacredSapHeal: 60,        // health from Ylva's sacred sap remedy (free but hard)
   // -- Contracts --
   contractTimeLimit: 120,
   contractBonusMult: 2.0,
@@ -302,7 +307,13 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   // New systems
   ARBRE_CHANT:100, // Arbre-Chant unique sacred tree (player-planted)
   SEED_TILE:101,   // Growing seed (sapling from Jardinier seeds)
-  BROKEN_AXE:102,  // Broken legendary axe (world pickup)
+  BROKEN_AXE:102,  // Broken legendary axe (world pickup — stuck in stump)
+  CABIN_ABAND:103, // Abandoned cabin (deep forest clearing scene)
+  DOCTOR:104,      // Doctor NPC (arrives after first contract)
+  RIVER:105,       // River tile (flowing water, interactable for raft)
+  BRIDGE:106,      // Bridge over river (walkable)
+  ARCHITECT:107,   // Architect NPC (arrives on first river sighting)
+  VIL_BARRICADE:108, // Village barricade (protection from corruption mobs)
   HERM_E:110,      // Estelle — Combat Hermit
   HERM_J:111,      // Ermite Jardinier
   HERM_T:112,      // Ermite Triste
@@ -416,6 +427,35 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _staminaBonus:0,
   _lastSwingT:0,       // timestamp of last swing (for circular double-tap)
   _counterWindow:0,    // counter-attack active window timer
+  // === FOUR SCORING AXES (invisible, never shown to player) ===
+  _axeDestruction:0,     // cuts, sacred trees felled, boss contracts, contrat final
+  _axeRestauration:0,    // purification, replanting, jardinier quest, zones restored
+  _axeComprehension:0,   // lore fragments, anthropologue, hermit interactions
+  _axeMaitrise:0,        // legendary axe, Estelle skills, instruments, bosses defeated
+  // === GRANDMOTHER HEALTH SYSTEM ===
+  _gmHealth:100,          // 0-100 health gauge, descends over time
+  _gmAlive:true,          // false if health reaches 0
+  _gmMedTimer:0,          // time since last medicine
+  _doctorArrived:false,   // doctor NPC present in village
+  _doctorPos:null,        // {x,y} position of doctor in village
+  // === SPECIAL CONTRACTS (refusable) ===
+  _bossContractEast:null,  // null, 'offered', 'accepted', 'refused'
+  _bossContractWest:null,
+  _finalContractState:null, // null, 'offered', 'accepted', 'refused'
+  // === PRIMORDIAL TREE INTERACTION ===
+  _primDeposited:false,    // deposited axe at primordial tree
+  _primStartedCut:false,   // started cutting (for renounce path)
+  _guardianFought:false,   // fought guardian (even if renounced after)
+  // === RIVER & ARCHITECT SYSTEM ===
+  _riverSeen:false,          // has the player seen a river tile?
+  _architectArrived:false,   // architect NPC spawned in village
+  _architectPos:null,        // {x,y}
+  _hasRaftPlan:false,        // bought raft blueprint
+  _hasBridgePlan:false,      // bought bridge blueprint
+  _hasBarricadePlan:false,   // bought barricade blueprint
+  _bridgesBuilt:0,           // total bridges placed
+  _barricadesBuilt:0,        // village barricades placed
+  _vilUnrest:0,              // village unrest level (0-100, mobs near village)
 };
 const RES_WEIGHT={wood:1,sap:1};
 function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap+(P.seeds||0)*TUNING.seedBagWeight+(P._instruments||[]).length*TUNING.instrumentBagWeight+(P._brokenAxeItem?3:0)}
@@ -2141,11 +2181,30 @@ const NPC_DATA = {
     visited: false,
   },
   [TT.BROKEN_AXE]: {
-    name: 'Hache Brisée',
-    title: '⚔️ Relique',
-    borderCol: '#d4a574',
+    name: 'Souche ancienne',
+    title: '⚔️ Hache fichée dans la souche',
+    borderCol: '#daa520',
     visited: false,
     noDialogue: true,
+  },
+  [TT.CABIN_ABAND]: {
+    name: 'Cabane abandonnée',
+    title: '🏚️ Cabane abandonnée',
+    borderCol: '#5a4030',
+    visited: false,
+    noDialogue: true,
+  },
+  [TT.DOCTOR]: {
+    name: 'Dr. Engström',
+    title: '💊 Médecin',
+    borderCol: '#4a8aaa',
+    visited: false,
+  },
+  [TT.ARCHITECT]: {
+    name: 'Sven l\'Architecte',
+    title: '🏗️ Architecte',
+    borderCol: '#b58863',
+    visited: false,
   },
 };
 
@@ -2242,10 +2301,26 @@ function getTavernRumors(){
 function getGrandparentDialogue(){
   const talks=P._grandparentTalked||0;
   const lines=[];
+  // If grandmother is dead, empty house
+  if(!P._gmAlive){
+    lines.push("...");
+    lines.push("Le lit est vide. La maison est silencieuse.");
+    lines.push("Son châle est encore sur la chaise. Il sent la lavande.");
+    P._grandparentTalked=(talks||0)+1;
+    return lines;
+  }
+  const gmH=Math.floor(P._gmHealth||100);
   if(talks===0){
     lines.push("*tousse*... Ah, te voilà, petit. Je t'attendais.");
     lines.push("Prends soin de toi dans cette forêt. Elle m'a donné tout... et tout repris.");
     lines.push("L'Entreprise dit qu'ils viennent aider. Ton grand-père disait pareil des marchands du sud, avant...");
+  }else if(P._doctorArrived&&gmH<25){
+    lines.push("*tousse faiblement*... Petit...");
+    lines.push("Ne pleure pas. J'ai eu une belle vie.");
+    lines.push("Va voir le docteur... s'il te plaît...");
+  }else if(P._doctorArrived&&gmH<50){
+    lines.push("*allongée, pâle*... Le docteur dit que les médicaments aident...");
+    lines.push("Mais ça coûte cher, n'est-ce pas ? Ne te ruine pas pour moi.");
   }else if(talks<3){
     lines.push("Tu fais du bon travail. Mais n'oublie pas... la forêt était là avant nous.");
     if(cuts>20) lines.push("Tu coupes beaucoup. J'entends les coups depuis mon lit. *tousse* Fais attention.");
@@ -2541,6 +2616,46 @@ function drawTristePortrait(c){
   c.fillStyle='#8a7a5a';c.fillRect(62,44,6,4);c.fillRect(62,44,2,20);c.fillRect(68,44,2,20);
   c.fillStyle='#c0b080';c.fillRect(64,48,1,12);c.fillRect(66,48,1,12);
 }
+function drawArchitectPortrait(c){
+  // Warm workshop background
+  c.fillStyle='#12100a';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,40,8,40,40,50);
+  gr.addColorStop(0,'rgba(180,136,100,0.1)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Blueprint scroll in background
+  c.fillStyle='rgba(240,232,200,0.12)';c.fillRect(8,8,20,30);
+  c.fillStyle='rgba(74,122,170,0.15)';c.fillRect(10,12,16,1);c.fillRect(10,16,14,1);c.fillRect(10,20,16,1);c.fillRect(10,24,10,1);
+  // Neck
+  c.fillStyle='#c8956a';c.fillRect(34,56,12,10);
+  // Shoulders/work vest
+  c.fillStyle='#6a5030';c.fillRect(18,64,44,16);
+  c.fillStyle='#7a6040';c.fillRect(22,66,36,14);
+  // Leather tool belt
+  c.fillStyle='#5a3a1a';c.fillRect(22,66,36,3);
+  c.fillStyle='#aaa';c.fillRect(36,67,4,2);
+  // Head
+  c.fillStyle='#d4a070';c.fillRect(26,16,28,38);
+  // Jaw
+  c.fillStyle='#c89868';c.fillRect(24,40,32,10);
+  c.fillStyle='#d4a070';c.fillRect(26,38,28,8);
+  // Brown hair, practical cut
+  c.fillStyle='#5a3a1a';c.fillRect(24,10,32,12);
+  c.fillRect(24,10,4,20);c.fillRect(52,10,4,20);
+  // Eyes - keen, observant
+  c.fillStyle='#0a0a0a';c.fillRect(32,26,5,4);c.fillRect(44,26,5,4);
+  c.fillStyle='#6a8a5a';c.fillRect(33,27,3,2);c.fillRect(45,27,3,2);
+  c.fillStyle='#9aba7a';c.fillRect(34,27,1,1);c.fillRect(46,27,1,1);
+  // Nose
+  c.fillStyle='#c89060';c.fillRect(38,30,4,6);
+  // Mouth with slight smile
+  c.fillStyle='#b07050';c.fillRect(35,38,10,2);
+  c.fillStyle='#c08060';c.fillRect(36,39,8,1);
+  // Short beard
+  c.fillStyle='#5a3a1a';c.fillRect(28,42,24,6);c.fillRect(32,48,16,3);
+  // Ruler/tool in hand
+  c.fillStyle='#c0a860';c.fillRect(60,40,4,30);
+  c.fillStyle='#e0c880';c.fillRect(60,40,4,2);c.fillRect(60,50,4,1);c.fillRect(60,60,4,1);
+}
 function drawPortrait(npcType, canvas){
   const c = canvas.getContext('2d');
   c.imageSmoothingEnabled = false;
@@ -2558,7 +2673,8 @@ function drawPortrait(npcType, canvas){
   else if(npcType === TT.HERM_E) drawEstellePortrait(c);
   else if(npcType === TT.HERM_J) drawJardinierPortrait(c);
   else if(npcType === TT.HERM_T) drawTristePortrait(c);
-  
+  else if(npcType === TT.ARCHITECT) drawArchitectPortrait(c);
+
   // Border glow
   const nd = NPC_DATA[npcType];
   if(nd){
@@ -2809,15 +2925,58 @@ function getDialogue(npcType){
       lines.push(pool[Math.floor(gt*7)%pool.length]);
     }
   }else if(npcType === TT.CHAM){
+    const loreCount=(P._sacredLore||[]).length;
+    const loreTotal=SACRED_LORE?SACRED_LORE.length:5;
+    const saplings=P._saplings||0;
+    const rituals=P._ritualsPerformed||0;
+    const hasLegAxe=P._hasLegendaryAxe;
+    const brokenAxeFound=P._brokenAxeFound;
+    const estelleMet=P._estelleMet;
+    const purPct=P._purificationPct||0;
     if(first){
       lines.push("Tu vas couper pour eux, n'est-ce pas ? Je le vois dans tes yeux.");
       lines.push("Sois prudent. Chaque arbre coupé laisse un vide. Et les vides attirent des choses.");
       lines.push("Si tu veux mes remèdes, rapporte-moi des herbes et des champignons des clairières.");
-    }else if(corrLevel > 5){
-      lines.push("Tu le sens ? La terre pleure sous tes pieds...");
-      lines.push("La corruption s'enracine. Bientôt elle sera plus profonde que les arbres eux-mêmes.");
-    }else if(corrLevel > 0){
+      lines.push("Et... écoute la forêt. Elle a des choses à te montrer, si tu sais regarder.");
+    }else if(corrLevel > 5 && rituals===0){
+      lines.push("La corruption dévore tout ! Il faut agir, maintenant !");
+      lines.push("Plante des jeunes pousses dans les zones corrompues. Ça ralentit la progression.");
+      lines.push("Et les rituels de purification... J'ai de l'encens si tu as des champignons.");
+      if(!estelleMet) lines.push("Il y a une ermite dans la forêt ancienne, Estelle. Elle pourrait t'aider à combattre les ombres.");
+    }else if(corrLevel > 5 && rituals>0){
+      lines.push("Tu as commencé les rituels. Bien. Mais il en faut plus.");
+      lines.push("Chaque zone purifiée est une victoire. Continue.");
+      if(loreCount<loreTotal) lines.push(`Les fragments de lore sacré... tu en as ${loreCount} sur ${loreTotal}. Cherche dans les profondeurs.`);
+    }else if(corrLevel > 0 && saplings===0){
       lines.push("Des murmures dans le sol. Ça commence...");
+      lines.push("Plante des pousses. Le Jardinier des Racines peut t'aider — cherche-le dans la forêt.");
+      lines.push("Et rapporte-moi des herbes. Mes potions de soin seront vitales bientôt.");
+    }else if(corrLevel > 0){
+      lines.push("La corruption est là, mais tu te bats. Je le vois.");
+      if(saplings>0&&saplings<5) lines.push(`${saplings} pousses plantées. C'est un début. Continue.`);
+      else if(saplings>=5) lines.push(`${saplings} pousses ! La forêt te remercie. Les racines chantent.`);
+      if(loreCount>0&&loreCount<loreTotal) lines.push(`Les fragments de lore... ${loreCount}/${loreTotal}. Chaque fragment est une clé vers la compréhension.`);
+    }else if(P._finalContractState==='offered'||P._finalContractState==='accepted'){
+      lines.push("Aldric t'a parlé de l'Arbre Primordial, n'est-ce pas ?");
+      lines.push("Ne le coupe pas. Je t'en supplie. L'Arbre est le cœur du Pacte.");
+      lines.push("Il y a un autre chemin. Dépose ta hache à ses pieds. Renonce au cycle de destruction.");
+      if(!hasLegAxe&&brokenAxeFound) lines.push("Et cette hache brisée que tu as trouvée... Björn pourrait la restaurer. Elle a un rôle à jouer.");
+    }else if(hasLegAxe&&loreCount>=loreTotal){
+      lines.push("Tu as la Hache Légendaire. Tu connais tout le lore sacré.");
+      lines.push("Tu as le pouvoir de tout détruire... ou de tout restaurer.");
+      lines.push("L'Arbre Primordial attend. Approche avec respect. Dépose la hache.");
+      lines.push("C'est le seul chemin vers le renouveau.");
+    }else if(hasLegAxe){
+      lines.push("La Hache Légendaire... Elle vibre dans tes mains, non ?");
+      lines.push("Un tel pouvoir peut guérir ou anéantir. Le choix sera le tien.");
+      if(loreCount<loreTotal) lines.push(`Mais d'abord, cherche les fragments de lore. ${loreCount}/${loreTotal}. La vérité doit être comprise.`);
+    }else if(brokenAxeFound&&!hasLegAxe){
+      lines.push("Cette hache brisée que tu portes... Elle était à l'ancien héros.");
+      lines.push("Björn le forgeron pourrait la restaurer. Mais l'ancienne sagesse dit qu'il faut du bois-titane.");
+    }else if(purPct>50){
+      lines.push("La forêt guérit ! Tu as purifié plus de la moitié de la corruption.");
+      lines.push("Continue. Les ermites de la forêt t'observent avec espoir.");
+      if(!estelleMet) lines.push("Cherche Estelle dans la forêt ancienne. Son combat t'apprendra la maîtrise.");
     }else if(P.herbs < TUNING.herbsForPotions && P.mushrooms < TUNING.mushsForEncens){
       lines.push(`Il me faut des herbes médicinales et des champignons pour préparer mes remèdes.`);
       lines.push(`Herbes: ${P.herbs}/${TUNING.herbsForPotions} · Champignons: ${P.mushrooms}/${TUNING.mushsForEncens}`);
@@ -2835,8 +2994,17 @@ function getDialogue(npcType){
         "Les esprits observent. Ils ne jugent pas encore.",
         "Chaque racine est connectée. Coupe ici, quelque chose tremble là-bas.",
         "Tu as ramené de belles récoltes. Mes remèdes n'en seront que meilleurs.",
+        "Les ermites de la forêt profonde gardent des secrets anciens. Cherche-les.",
+        "Planter un arbre, c'est signer un pacte avec l'avenir.",
       ];
       lines.push(pool[Math.floor(gt*13)%pool.length]);
+    }
+    // Grandmother health guidance from Ylva
+    if(P._doctorArrived && P._gmAlive && P._gmHealth<50){
+      lines.push("...");
+      lines.push("Ta grand-mère faiblit. Le docteur vend des remèdes... mais ils coûtent cher.");
+      if(loreCount>=4&&P.sap>=5) lines.push("J'ai une alternative. La sève sacrée. Gratuite, mais il faut la mériter.");
+      else if(loreCount<4) lines.push("Si tu trouves assez de lore sacré, je pourrai préparer un remède à base de sève sacrée.");
     }
   }else if(npcType === TT.TAV){
     if(first){
@@ -2888,6 +3056,16 @@ function getDialogue(npcType){
       }else{
         lines.push("Le contrat est en cours. Ramène-moi ce bois et tu seras bien payé.");
       }
+    }else if(P._finalContractState==='refused'){
+      lines.push("Vous avez refusé le contrat final. L'Entreprise n'oublie pas.");
+      lines.push("Mais vous... vous avez fait votre choix. Vivez avec.");
+    }else if(P._bossContractEast==='refused'||P._bossContractWest==='refused'){
+      lines.push("Vous refusez mes contrats spéciaux... Vous pensez que ça n'a pas de conséquences ?");
+      lines.push("L'Entreprise enverra quelqu'un d'autre. Quelqu'un de moins... délicat.");
+    }else if(P._bossContractEast==='accepted'&&(!bossEast||!bossEast.defeated)){
+      lines.push("L'Arbre-Pieuvre vous attend à l'est. N'oubliez pas notre accord.");
+    }else if(P._bossContractWest==='accepted'&&(!bossWest||!bossWest.defeated)){
+      lines.push("L'Ours Ancestral rôde toujours à l'ouest. Occupez-vous en.");
     }else{
       const pool=[
         "Du nouveau bois à vendre ? Je suis toujours acheteur.",
@@ -2897,6 +3075,46 @@ function getDialogue(npcType){
         "Certains me trouvent froid. Je suis juste... professionnel.",
       ];
       lines.push(pool[Math.floor(gt*17)%pool.length]);
+    }
+  }else if(npcType === TT.DOCTOR){
+    const gmH=Math.floor(P._gmHealth||100);
+    if(first){
+      lines.push("Bonjour. Dr. Engström. L'Entreprise m'a envoyé.");
+      lines.push("Votre grand-mère... Sa condition est stable, mais elle a besoin de soins réguliers.");
+      lines.push("Les médicaments ne sont pas gratuits. Mais c'est ça ou...");
+      lines.push("Enfin. Venez me voir souvent.");
+    }else if(!P._gmAlive){
+      lines.push("Je suis désolé. Sincèrement. J'ai fait ce que j'ai pu.");
+      lines.push("...");
+    }else if(gmH<25){
+      lines.push("C'est critique. Si vous ne la soignez pas maintenant, je ne réponds de rien.");
+      lines.push("Achetez des médicaments. Immédiatement.");
+    }else if(gmH<50){
+      lines.push("Sa santé décline. Elle a besoin de médicaments.");
+      lines.push("Ne la laissez pas souffrir.");
+    }else{
+      lines.push("Votre grand-mère va bien pour le moment. Continuez les soins réguliers.");
+    }
+  }else if(npcType === TT.ARCHITECT){
+    if(first){
+      lines.push("Salut ! Sven, architecte et ingénieur. Les rivières m'ont attiré ici.");
+      lines.push("Tu veux traverser les cours d'eau ? Construire des ponts ? Des radeaux ?");
+      lines.push("J'ai les plans pour tout ça. Et aussi des barricades pour protéger le village.");
+      lines.push("Rapporte-moi du bois, et je t'apprendrai à construire.");
+    }else if((P._vilUnrest||0)>30&&(P._barricadesBuilt||0)<5){
+      lines.push("Le village est menacé ! Les monstres rôdent au nord...");
+      lines.push("Installe des barricades, vite ! J'ai les plans si tu veux.");
+    }else if(P._hasRaftPlan&&P._hasBridgePlan&&P._hasBarricadePlan){
+      lines.push("Tu as tous mes plans ! Tu es un vrai bâtisseur maintenant.");
+      lines.push("Continue à construire des ponts et des barricades. C'est vital.");
+    }else{
+      const pool=[
+        "Un bon pont vaut mieux qu'un long détour.",
+        "Les radeaux, c'est rapide mais ça coûte du bois à chaque trajet.",
+        "Les barricades protègent le village. Plus il y en a, mieux c'est.",
+        "L'architecture, c'est l'art de résoudre les problèmes avec du bois.",
+      ];
+      lines.push(pool[Math.floor(gt*11)%pool.length]);
     }
   }else if(npcType === TT.HOME){
     // Grandparent dialogue
@@ -2967,7 +3185,7 @@ function getDialogue(npcType){
     // Estelle — Combat Hermit
     const v=NPC_VISITS[TT.HERM_E]||0;
     if(v===0){
-      P._estelleMet=true;
+      P._estelleMet=true;addComprehension(2);addMaitrise(1);
       lines.push("...");
       lines.push("Tu as du courage pour venir jusque-là. Estelle. Ancienne guerrière.");
       lines.push("La forêt est dangereuse. Les ombres rôdent, les loups chassent.");
@@ -2984,7 +3202,7 @@ function getDialogue(npcType){
     // Ermite Jardinier
     const v=NPC_VISITS[TT.HERM_J]||0;
     if(v===0){
-      P._jardinierMet=true;
+      P._jardinierMet=true;addComprehension(2);
       lines.push("Ha ha ! Un visiteur ! Bienvenue dans mon jardin !");
       lines.push("*gesticule frénétiquement parmi les plantes*");
       lines.push("Je suis le Jardinier. Le Fou des Graines, comme ils m'appellent.");
@@ -3014,7 +3232,7 @@ function getDialogue(npcType){
   }else if(npcType === TT.HERM_T){
     // Ermite Triste
     const v=NPC_VISITS[TT.HERM_T]||0;
-    P._tristeMet=true;
+    P._tristeMet=true;addComprehension(3);
     if(v===0){
       lines.push("...");
       lines.push("*silence prolongé*");
@@ -3046,14 +3264,34 @@ function getDialogue(npcType){
     }
   }
   
-  // Aldric's final contract check
-  if(npcType === TT.EMIS && P._deepestBiome>=3 && cuts>80 && !P._aldricFinalContract && !P._ending){
-    lines.push("...");
-    lines.push("\u00c9coutez. L'Entreprise a un dernier contrat. Le plus gros de votre carri\u00e8re.");
-    lines.push("Il y a un arbre au c\u0153ur de la for\u00eat. Massif. Ancien. Unique.");
-    lines.push("Nos experts estiment sa valeur \u00e0... eh bien, disons que vous ne travaillerez plus jamais.");
-    lines.push("Coupez-le. Ramenez le bois. Et votre grand-m\u00e8re aura les meilleurs soins du royaume.");
-    P._aldricFinalContract=true;
+  // === BOSS BIOME CONTRACTS (refusable) ===
+  if(npcType === TT.EMIS && !P._ending){
+    const ci=P._contractsDone||0;
+    // East boss contract offered at contract #10+ (Érable phase)
+    if(ci>=10 && !P._bossContractEast){
+      P._bossContractEast='offered';
+      lines.push("...");
+      lines.push("L'Entreprise a identifié une créature qui bloque nos opérations à l'est.");
+      lines.push("Un arbre-pieuvre massif. Il faut l'éliminer pour accéder au bois précieux derrière.");
+      lines.push("500 pièces d'or. C'est à prendre ou à laisser.");
+    }
+    // West boss contract offered at contract #15+ (Pin/Frêne phase)
+    if(ci>=15 && !P._bossContractWest){
+      P._bossContractWest='offered';
+      lines.push("...");
+      lines.push("L'Entreprise a un autre problème. Un ours ancestral terrorise l'ouest.");
+      lines.push("Nos bûcherons refusent d'y aller. Mais toi... toi tu es différent.");
+      lines.push("600 pièces d'or pour la peau de la bête. Un bon prix.");
+    }
+    // Final contract offered at contract #20+ and deep biome access
+    if(ci>=20 && P._deepestBiome>=3 && !P._finalContractState){
+      P._finalContractState='offered';
+      lines.push("...");
+      lines.push("Écoutez. L'Entreprise a un dernier contrat. Le plus gros de votre carrière.");
+      lines.push("Il y a un arbre au cœur de la forêt. Massif. Ancien. Unique.");
+      lines.push("Nos experts estiment sa valeur à... eh bien, disons que vous ne travaillerez plus jamais.");
+      lines.push("Coupez-le. Ramenez le bois. Et votre grand-mère aura les meilleurs soins du royaume.");
+    }
   }
   
   // Inject tavern rumor as bonus line for Gunnar
@@ -3061,6 +3299,34 @@ function getDialogue(npcType){
     lines.push('💬 Rumeur: '+getTavernRumors());
   }
   
+  // Village unrest: villagers complain when mobs are near
+  const unrest=P._vilUnrest||0;
+  const isVillager=npcType===TT.TAV||npcType===TT.FORGE||npcType===TT.HOME||npcType===TT.CHAM||npcType===TT.CARTO||npcType===TT.ANTHRO||npcType===TT.DOCTOR;
+  if(isVillager && unrest>20){
+    const barrLevel=vilBarricadeLevel();
+    if(unrest>70&&barrLevel<0.5){
+      const fearLines=[
+        "Les créatures rôdent aux portes du village ! On ne peut plus dormir !",
+        "Quelqu'un doit faire quelque chose ! Des barricades, un rituel, n'importe quoi !",
+        "Si ça continue, les gens vont fuir. Le village va mourir.",
+      ];
+      lines.push("...");
+      lines.push(fearLines[Math.floor(gt*7)%fearLines.length]);
+    }else if(unrest>40){
+      const worryLines=[
+        "Tu as vu les ombres au nord ? Ça me rend nerveux...",
+        "Les enfants n'osent plus sortir. Ces créatures sont trop proches.",
+        "Il faudrait des barricades. Ou purifier la terre corrompue.",
+      ];
+      lines.push("...");
+      lines.push(worryLines[Math.floor(gt*7)%worryLines.length]);
+    }else{
+      lines.push("... Des bruits étranges viennent du nord cette nuit...");
+    }
+    if(barrLevel>=0.8) lines.push("Au moins les barricades tiennent. Pour l'instant.");
+    else if(barrLevel>0) lines.push(`Les barricades aident un peu... mais il en faut plus.`);
+  }
+
   NPC_VISITS[npcType] = (NPC_VISITS[npcType]||0) + 1;
   return lines;
 }
@@ -3432,6 +3698,39 @@ function genMap(){
     }
   }
 
+  // === RIVERS: 3 rivers flowing north→south with meandering ===
+  window._rivers=[]; // store river paths for later reference
+  const riverStarts=[
+    {x:Math.floor(95+n2(0,0,seed+1100)*15), label:'riviere_ouest'},  // left-center ~95-110
+    {x:Math.floor(128+n2(1,0,seed+1101)*10-5), label:'riviere_centre'}, // center ~123-133
+    {x:Math.floor(150+n2(2,0,seed+1102)*15), label:'riviere_est'},  // right-center ~150-165
+  ];
+  for(const rs of riverStarts){
+    let rx=rs.x;
+    const riverPath=[];
+    // River flows from y=5 down to y=VIL_Y-3 (stop before village)
+    for(let ry=5;ry<VIL_Y-3;ry++){
+      // Meander: slight random drift based on noise
+      const drift=n2(ry,rs.x,seed+1110);
+      if(drift>.75&&rx<MW-10) rx++;
+      else if(drift<.25&&rx>10) rx--;
+      // River width: 1-2 tiles
+      const w=n2(rx,ry,seed+1120)>.6?2:1;
+      for(let dx=0;dx<w;dx++){
+        const nx=rx+dx;
+        if(nx>2&&nx<MW-2&&ry>2&&ry<VIL_Y-2){
+          const cur=map[ry][nx];
+          // Don't overwrite buildings, primordial tree, sacred trees, bosses, or water ponds
+          if(cur!==TT.PRIM&&cur!==TT.TJ&&cur!==TT.WA&&!isBld(cur)&&cur!==TT.RK){
+            map[ry][nx]=TT.RIVER;
+            riverPath.push({x:nx,y:ry});
+          }
+        }
+      }
+    }
+    window._rivers.push({label:rs.label,path:riverPath});
+  }
+
   // === BOSS ARENAS ===
   // East boss: Arbre-pieuvre at x=220, y=100
   const bossEX=220,bossEY=100;
@@ -3517,17 +3816,24 @@ function genMap(){
   const hWX=Math.floor(10+n2(41,50,seed+957)*60),hWY=Math.floor(40+n2(41,51,seed+958)*120);
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=hWX+dx,ny=hWY+dy;if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){if(dx===0&&dy===0)map[ny][nx]=TT.HERM;else map[ny][nx]=TT.G}}
 
-  // === BROKEN LEGENDARY AXE — hidden in Forêt Ancienne ===
-  const brAxeX=Math.floor(30+n2(99,50,seed+980)*60);
-  const brAxeY=Math.floor(B_PRIM+15+n2(99,51,seed+981)*(B_ANC-B_PRIM-30));
-  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+  // === BROKEN LEGENDARY AXE — clearing in Forêt Profonde (Primordiale) ===
+  // Scene: abandoned cabin in a clearing, axe stuck in a stump in front
+  const brAxeX=Math.floor(30+n2(99,50,seed+980)*50);
+  const brAxeY=Math.floor(8+n2(99,51,seed+981)*(B_PRIM-18));
+  const cabinX=brAxeX, cabinY=brAxeY-2; // cabin 2 tiles north of axe
+  // Clear a large clearing (radius 4) around the scene
+  for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
     const nx=brAxeX+dx,ny=brAxeY+dy;
     if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
-      if(dx===0&&dy===0) map[ny][nx]=TT.BROKEN_AXE;
-      else map[ny][nx]=TT.G;
+      if(dx*dx+dy*dy<=18) map[ny][nx]=TT.G; // circular clearing ~radius 4
     }
   }
+  // Place abandoned cabin (north of stump)
+  if(cabinY>1&&cabinX>1&&cabinX<MW-1) map[cabinY][cabinX]=TT.CABIN_ABAND;
+  // Place broken axe (stuck in stump, south of cabin)
+  map[brAxeY][brAxeX]=TT.BROKEN_AXE;
   window._brokenAxePos={x:brAxeX,y:brAxeY};
+  window._cabinAbandPos={x:cabinX,y:cabinY};
 
   corrSrc=Array.from({length:MH},()=>Array(MW).fill(false));
   _corrSources=[];
@@ -3554,9 +3860,9 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
-function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE}
+function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
 
 // Flood-fill to find contiguous stump cluster (8-connected)
 function findStumpCluster(sx,sy){
@@ -3654,6 +3960,21 @@ function checkLuthierArrival(tileType){
   }
 }
 
+// === DOCTOR SPAWN (after first contract + sleep) ===
+function spawnDoctorIfReady(){
+  if(P._doctorArrived)return;
+  if((P._contractsDone||0)<1)return;
+  P._doctorArrived=true;
+  // Place doctor in village near the home
+  const cx=CX-5, cy=VIL_Y+4;
+  if(cy<MH&&cx>0&&cx<MW){
+    map[cy][cx]=TT.DOCTOR;
+    P._doctorPos={x:cx,y:cy};
+  }
+  ft2(P.x,P.y-1,'💊 Un médecin s\'est installé au village!','#4a8aaa');
+  ft2(P.x,P.y-2,'Aldric a tenu parole... pour l\'instant.','#aaa');
+}
+
 // ============ REGROWTH SYSTEM ============
 let _rgT=0;
 function updRegrow(d){
@@ -3717,6 +4038,17 @@ function spawnSacredMiniBoss(tx,ty,biome){
 }
 
 // ============ CORRUPTION / ENTITIES / PARTICLES / PLAYER / SHOP ============
+// === SCORING AXIS HELPERS (invisible tracking) ===
+function addDestruction(amt){P._axeDestruction=Math.max(0,(P._axeDestruction||0)+amt)}
+function addRestauration(amt){P._axeRestauration=Math.max(0,(P._axeRestauration||0)+amt)}
+function addComprehension(amt){P._axeComprehension=Math.max(0,(P._axeComprehension||0)+amt)}
+function addMaitrise(amt){P._axeMaitrise=Math.max(0,(P._axeMaitrise||0)+amt)}
+// Normalized 0-1 axis getters for ending composition
+function getDestruction(){return Math.min(1,(P._axeDestruction||0)/150)}
+function getRestauration(){return Math.min(1,(P._axeRestauration||0)/80)}
+function getComprehension(){return Math.min(1,(P._axeComprehension||0)/30)}
+function getMaitrise(){return Math.min(1,(P._axeMaitrise||0)/40)}
+
 // Corruption only spreads from marked source tiles (contiguous clear-cuts)
 let _corrSources=[]; // list of [x,y] source positions for fast iteration
 let _corrT2=0;
@@ -3750,6 +4082,15 @@ function updCorr(d){
   // Debt interest
   if(P._debt>0&&TUNING.debtInterestRate>0){
     P._debt=Math.floor(P._debt*(1+TUNING.debtInterestRate*d/60));
+  }
+  // === GRANDMOTHER HEALTH TIMER ===
+  if(P._gmAlive&&P._doctorArrived){
+    P._gmHealth=Math.max(0,P._gmHealth-TUNING.gmHealthDecay*d);
+    if(P._gmHealth<=0){
+      P._gmAlive=false;P._gmHealth=0;
+      ft2(P.x,P.y-2,'💀 Grand-mère est partie...','#8b0000');
+      shake=1;
+    }
   }
 }
 function spawnE(){
@@ -4174,11 +4515,7 @@ function updP2(d){
     // If dialogue is active, advance it
     if(shopOn && document.getElementById('dlg').style.display==='block'){advanceDialogue();return;}
     if(shopOn){
-      // Check for protect ending when leaving grandma after guardian defeat
-      if(curShop===TT.HOME && P._guardianDefeated && !P._ending && !P._primCut){
-        P._ending='protect';
-        setTimeout(()=>triggerEnding('protect'),2000);
-      }
+      // (endings now triggered at Primordial Tree via doPrimDeposit/doPrimRenounce)
       shopOn=false;curShop='';dlgQueue=[];dlgTyping=false;document.getElementById('dlg').style.display='none';document.getElementById('shp').style.display='none'}
     else{
       const px2=Math.floor(P.x),py2=Math.floor(P.y);
@@ -4188,7 +4525,7 @@ function updP2(d){
         if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&(map[ny2][nx2]===TT.TJ||map[ny2][nx2]===TT.ARBRE_CHANT)){
           const lore=getSacredLore(nx2,ny2);
           if(lore){
-            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
+            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();addComprehension(4);if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
             shopOn=true;curShop='SACRED';
             document.getElementById('shp').style.display='block';
             document.querySelector('#shp h2').textContent='🌳 Arbre Sacré';
@@ -4216,6 +4553,64 @@ function updP2(d){
             typeNextLine();
             return;
           }
+        }
+      }
+      // Check for Primordial Tree interaction (E = deposit/choice)
+      for(let dy=-3;dy<=3;dy++)for(let dx=-3;dx<=3;dx++){
+        const nx2=px2+dx,ny2=py2+dy;
+        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.PRIM&&!P._primCut&&!P._ending){
+          shopOn=true;curShop='PRIM_CHOICE';
+          document.getElementById('shp').style.display='block';
+          document.querySelector('#shp h2').textContent='🌳 Arbre Primordial';
+          document.querySelector('#shp h2').style.display='block';
+          const si2=document.getElementById('si2');si2.style.display='block';
+          let html='';
+          // Option 1: Deposit the axe (always available)
+          html+='<div class="si"><span>🪓 Déposer la hache au pied de l\'arbre</span><button class="sb" onclick="doPrimDeposit()">Renoncer</button></div>';
+          // Option 2: Cut (if guardian defeated or low destruction)
+          if(P._guardianDefeated){
+            html+='<div class="si"><span>⚔️ Couper l\'Arbre Primordial'+(P._primHits>0?' ('+(5-(P._primHits||0))+' coups restants)':'')+'</span><button class="sb" onclick="doPrimCut()">Couper</button></div>';
+          }
+          // Option 3: Renounce (if started cutting / fought guardian)
+          if(P._guardianFought&&P._primStartedCut&&!P._primDeposited){
+            html+='<div class="si"><span>😔 Renoncer après le combat</span><button class="sb" onclick="doPrimRenounce()">Renoncer</button></div>';
+          }
+          // Status info
+          if(!P._guardianAwake&&getDestruction()<=0.4) html+='<div class="si" style="color:#52b788;font-size:9px">Le Gardien est en paix. La forêt est calme.</div>';
+          if(P._guardianDefeated) html+='<div class="si" style="color:#e74c3c;font-size:9px">Le Gardien gît au sol. L\'arbre porte des cicatrices.</div>';
+          si2.innerHTML=html;
+          return;
+        }
+      }
+      // Check for River interaction (build raft / build bridge)
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+        const nx2=px2+dx,ny2=py2+dy;
+        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.RIVER){
+          shopOn=true;curShop='RIVER';
+          document.getElementById('shp').style.display='block';
+          document.querySelector('#shp h2').textContent='🏞️ Rivière';
+          document.querySelector('#shp h2').style.display='block';
+          const si2=document.getElementById('si2');si2.style.display='block';
+          let html='';
+          if(P._hasRaftPlan){
+            const raftCost=5;
+            const canRaft=P.w>=raftCost;
+            html+='<div class="si"><span>🛶 Construire un radeau et rentrer au village ('+raftCost+' bûches)</span><button class="sb" onclick="doRaftToVillage('+nx2+','+ny2+')"'+(canRaft?'':' disabled style="opacity:0.4"')+'>Construire</button></div>';
+            if(!canRaft) html+='<div class="si" style="color:#e74c3c;font-size:9px">Pas assez de bûches ('+P.w+'/'+raftCost+')</div>';
+          }else{
+            html+='<div class="si" style="color:#aaa;font-size:9px">Tu ne sais pas construire un radeau. Parle à l\'Architecte au village.</div>';
+          }
+          if(P._hasBridgePlan){
+            const bridgeCost=10;
+            const canBridge=P.w>=bridgeCost;
+            html+='<div class="si"><span>🌉 Construire un pont ici ('+bridgeCost+' bûches)</span><button class="sb" onclick="doBuildBridge('+nx2+','+ny2+')"'+(canBridge?'':' disabled style="opacity:0.4"')+'>Pont</button></div>';
+            if(!canBridge) html+='<div class="si" style="color:#e74c3c;font-size:9px">Pas assez de bûches ('+P.w+'/'+bridgeCost+')</div>';
+          }
+          html+='<div class="si" style="color:#6ab8d4;font-size:9px;padding:4px">L\'eau coule vers le sud, vers le village...</div>';
+          si2.innerHTML=html;
+          // Also trigger river-seen for architect
+          if(!P._riverSeen){P._riverSeen=true;ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');spawnArchitect()}
+          return;
         }
       }
       // Then check for buildings
@@ -4288,27 +4683,42 @@ function updP2(d){
     // Sacred mini-boss hit detection
     hitSacredMiniBoss(P.x+dd[0]*.5,P.y+dd[1]*.5,P.pow);
     // Lateral boss hit detection
-    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100}}}
-    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100}}}
+    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100;addMaitrise(8)}}}
+    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100;addMaitrise(8)}}}
     // Guardian hit detection
-    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2;ft2(guardian.x,guardian.y-3,'Retourne au village...','#ffd700')}}}
+    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;P._guardianFought=true;addMaitrise(10);ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2}}}
     if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&isT(map[ty][tx])){
       const tile=map[ty][tx],ess=ESS[tile];if(!ess)return;
       // === PRIMORDIAL TREE SPECIAL HANDLING ===
       if(tile===TT.PRIM){
+        // Guardian behavior depends on Destruction level
+        const destr=getDestruction();
         if(!P._guardianAwake){
-          P._guardianAwake=true;P._primHits=1;
-          shake=1.5;
-          ft2(tx+.5,ty-1.5,'LA TERRE TREMBLE...','#ff0000');
-          ft2(tx+.5,ty-2.5,'LE GARDIEN S\'\u00c9VEILLE !','#8b0000');
-          spawnGuardian(tx,ty);
-          sp(tx+.5,ty+.5,'#8b0000',20);
-          return;
+          if(destr>0.4){
+            // High destruction: Guardian is hostile, awakens on approach/attack
+            P._guardianAwake=true;P._primStartedCut=true;P._guardianFought=true;
+            P._primHits=1;
+            shake=1.5;
+            ft2(tx+.5,ty-1.5,'LA TERRE TREMBLE...','#ff0000');
+            ft2(tx+.5,ty-2.5,'LE GARDIEN S\'\u00c9VEILLE !','#8b0000');
+            addDestruction(5);
+            spawnGuardian(tx,ty);
+            sp(tx+.5,ty+.5,'#8b0000',20);
+            return;
+          }else{
+            // Low destruction: Guardian is at peace, player can interact freely
+            // Show interaction menu via E key instead
+            ft2(tx+.5,ty-.5,'Approche avec E pour interagir','#ffd700');
+            return;
+          }
         }else if(!P._guardianDefeated){
           ft2(tx+.5,ty-.5,'Le Gardien prot\u00e8ge l\'arbre !','#e74c3c');
           shake=.3;return;
         }else{
+          // Guardian defeated — player can continue cutting or renounce
+          P._primStartedCut=true;
           P._primHits=(P._primHits||0)+1;
+          addDestruction(10);
           if(P._primHits>=5){
             P._primCut=true;P._ending='cut';
             map[ty][tx]=TT.ST;
@@ -4317,6 +4727,7 @@ function updP2(d){
           }
           shake=.5;sp(tx+.5,ty+.5,'#DAA520',15);
           ft2(tx+.5,ty-.5,(5-P._primHits)+' coups restants...','#e74c3c');
+          ft2(tx+.5,ty-1.5,'(E pour renoncer)','#ffd700');
           return;
         }
       }
@@ -4377,6 +4788,8 @@ function updP2(d){
           regrowMap[ty][tx]={ess:tile,time:gt+300}; // ~1 day/night cycle (300s)
         }
         map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();
+        // Scoring: Destruction +1 per tree, +5 for sacred
+        addDestruction(ess.sacred?5:1);
         // Check luthier arrival on rare wood
         if(!P._luthierArrived)checkLuthierArrival(tile);
         // Track first corruption trigger
@@ -4482,6 +4895,8 @@ function shopTitle(t){
   if(t===TT.HERM_J)return'🌱 Le Jardinier';
   if(t===TT.HERM_T)return'🎵 L\'Ermite Triste';
   if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
+  if(t===TT.DOCTOR)return'💊 Dr. Engström';
+  if(t===TT.ARCHITECT)return'🏗️ Sven — Architecte';
   return'🏠 Village';
 }
 function updShop(){
@@ -4526,16 +4941,28 @@ function updShop(){
       {n:`   ✨ Essences: ${P.essences||0} · 🌱 Plantées: ${P._saplings||0}`,c:9999,a:()=>{}},
       {n:`   🌀 Rituels: ${P._ritualsPerformed||0} · 🌿 Pureté: ${P._purificationPct||0}%`,c:9999,a:()=>{}},
     ];
+    // Ylva's alternative remedy: sacred sap for grandmother (free but requires sacred tree sap)
+    if(P._doctorArrived&&P._gmAlive&&P.sap>=5&&P._sacredLore&&P._sacredLore.length>=4){
+      items.push({n:'🌿 Remède de sève sacrée pour grand-mère (5 sève)',c:0,a:()=>{
+        if(P.sap>=5){P.sap-=5;P._gmHealth=Math.min(100,P._gmHealth+TUNING.gmSacredSapHeal);addRestauration(3);ft2(P.x,P.y,`🌿 +${TUNING.gmSacredSapHeal} santé grand-mère`,'#52b788');ft2(P.x,P.y-1,'La sève de la forêt guérit...','#74c69d');updShop()}
+      }});
+    }
   }else if(t===TT.HOME){
-    // Player's house: sleep + chest storage
+    // Player's house: sleep + chest storage + grandmother status
     const isNight = dayPhase < 0.14 || dayPhase > 0.82;
+    const gmH=Math.floor(P._gmHealth||100);
+    const gmCol=gmH>60?'#52b788':gmH>30?'#e9c46a':'#e74c3c';
+    const gmStatus=!P._gmAlive?'💀 Décédée':gmH>75?'😊 En forme':gmH>50?'😐 Fatiguée':gmH>25?'😰 Malade':'🛏️ Très faible';
     items=[
-      {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(pas fatigué)'}`,c:isNight?0:9999,a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700')}},
+      {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(pas fatigué)'}`,c:isNight?0:9999,a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700');spawnDoctorIfReady()}},
       {n:`📦 Déposer bois (coffre: ${P.chestWood})`,c:0,a:()=>{if(P.w>0){P.chestWood+=P.w;ft2(P.x,P.y,`📦+${P.w} bois`,'#c8a060');P.w=0;P.wv=0;P.woodByType={};updShop()}},wd:1},
       {n:`📦 Déposer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.sap>0){P.chestSap+=P.sap;ft2(P.x,P.y,`📦+${P.sap} sève`,'#b088d0');P.sap=0;updShop()}}},
       {n:`📦 Récupérer bois (coffre: ${P.chestWood})`,c:0,a:()=>{if(P.chestWood>0){const take=Math.min(P.chestWood,Math.floor(invFree()/RES_WEIGHT.wood));if(take>0){P.w+=take;P.chestWood-=take;ft2(P.x,P.y,`🪵+${take}`,'#deb887');updShop()}}},wd:1},
       {n:`📦 Récupérer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.chestSap>0){const take=Math.min(P.chestSap,Math.floor(invFree()/RES_WEIGHT.sap));if(take>0){P.sap+=take;P.chestSap-=take;ft2(P.x,P.y,`💧+${take}`,'#b088d0');updShop()}}}},
     ];
+    // Grandmother health status
+    if(P._doctorArrived&&P._gmAlive) items.push({n:`   👵 Grand-mère: ${gmStatus} (${gmH}%)`,c:9999,a:()=>{}});
+    else if(!P._gmAlive) items.push({n:'   👵 Le lit est vide. La maison est silencieuse.',c:9999,a:()=>{}});
   }else if(t===TT.CARTO){
     // Cartographe: reveals map areas, sells maps
     items=[
@@ -4566,10 +4993,10 @@ function updShop(){
     // Estelle — Combat training
     const t2=P._estelleTraining||0;
     items=[];
-    if(t2===0) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus+=30;ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
-    if(t2>=1&&!P._hasSkillCircular) items.push({n:'⚔️ Apprendre: Attaque circulaire (ESPACE×2)',c:60,a:()=>{P._hasSkillCircular=true;P._estelleTraining=2;ft2(P.x,P.y,'⚔️ Attaque circulaire!','#cc4444');updShop()}});
-    if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
-    if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
+    if(t2===0) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus+=30;addMaitrise(3);ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
+    if(t2>=1&&!P._hasSkillCircular) items.push({n:'⚔️ Apprendre: Attaque circulaire (ESPACE×2)',c:60,a:()=>{P._hasSkillCircular=true;P._estelleTraining=2;addMaitrise(3);ft2(P.x,P.y,'⚔️ Attaque circulaire!','#cc4444');updShop()}});
+    if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;addMaitrise(3);ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
+    if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;addMaitrise(3);ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
     if(t2>=4) items.push({n:'⚡ Stamina +25',c:80,a:()=>{P.msta+=25;P.sta=P.msta;P._staminaBonus+=25;ft2(P.x,P.y,'⚡+25 Stamina','#cc4444')}});
     items.push({n:`   Entraînement: Niv.${t2} · Stamina bonus: +${P._staminaBonus||0}`,c:9999,a:()=>{}});
   }else if(t===TT.HERM_J){
@@ -4614,6 +5041,7 @@ function updShop(){
         P._brokenAxeItem=false;
         P.axe=5;P.pow=5;
         P._axeDur=200;P._axeMaxDur=200;
+        addMaitrise(10); // legendary axe = major mastery
         ft2(P.x,P.y,'⚔️ HACHE LÉGENDAIRE RESTAURÉE !','#ffd700');
         sfxLore();shake=1;sp(P.x,P.y,'#ffd700',25);
         updShop();
@@ -4628,19 +5056,76 @@ function updShop(){
     // Broken Legendary Axe pickup
     items=[];
     if(!P._brokenAxeFound){
-      items.push({n:'⚔️ Ramasser la Hache Brisée',c:0,a:()=>{
+      items.push({n:'⚔️ Arracher la Hache de la souche',c:0,a:()=>{
         P._brokenAxeFound=true;
         P._brokenAxeItem=true;
-        map[Math.floor(P.y)][Math.floor(P.x)]=TT.G; // Remove from map (find nearby BROKEN_AXE tile)
+        map[Math.floor(P.y)][Math.floor(P.x)]=TT.G;
         const bax=window._brokenAxePos;
-        if(bax)map[bax.y][bax.x]=TT.G;
+        if(bax)map[bax.y][bax.x]=TT.ST; // Leave the stump behind
         ft2(P.x,P.y,'⚔️ Hache Légendaire Brisée trouvée!','#d4a574');
         sfxLore();shake=.3;
         updShop();
       }});
-      items.push({n:'   Une hache ancienne, brisée. La lame a un éclat étrange...',c:9999,a:()=>{}});
+      items.push({n:'   Une hache ancienne fichée dans une vieille souche...',c:9999,a:()=>{}});
+      items.push({n:'   La lame brisée émet un éclat doré étrange.',c:9999,a:()=>{}});
+      items.push({n:'   Une cabane abandonnée se dresse derrière, envahie par la mousse.',c:9999,a:()=>{}});
     }else{
       items.push({n:'   (Déjà récupérée)',c:9999,a:()=>{}});
+    }
+  }else if(t===TT.CABIN_ABAND){
+    // Abandoned cabin — flavor text only
+    items=[];
+    items.push({n:'🏚️ Cabane abandonnée',c:9999,a:()=>{}});
+    items.push({n:'   Le toit s\'effondre, la mousse recouvre les murs.',c:9999,a:()=>{}});
+    items.push({n:'   Quelqu\'un vivait ici, il y a très longtemps...',c:9999,a:()=>{}});
+    items.push({n:'   Des marques de hache couvrent le chambranle de la porte.',c:9999,a:()=>{}});
+  }else if(t===TT.DOCTOR){
+    // Doctor NPC — medicine for grandmother
+    items=[];
+    const gmH=Math.floor(P._gmHealth||100);
+    if(P._gmAlive){
+      items.push({n:`💊 Acheter des médicaments (${TUNING.gmMedicineCost} or)`,c:TUNING.gmMedicineCost,a:()=>{
+        P._gmHealth=Math.min(100,P._gmHealth+TUNING.gmMedicineHeal);
+        ft2(P.x,P.y,`💊 +${TUNING.gmMedicineHeal} santé grand-mère`,'#4a8aaa');
+        updShop();
+      }});
+      items.push({n:`   👵 Santé: ${gmH}%${gmH<30?' ⚠️ CRITIQUE':''}`,c:9999,a:()=>{}});
+      if(gmH>70) items.push({n:'   "Votre grand-mère se porte bien. Les médicaments aident."',c:9999,a:()=>{}});
+      else if(gmH>30) items.push({n:'   "Elle a besoin de soins réguliers. Ne tardez pas."',c:9999,a:()=>{}});
+      else items.push({n:'   "C\'est urgent. Achetez des médicaments immédiatement."',c:9999,a:()=>{}});
+    }else{
+      items.push({n:'   "Je suis désolé... Il n\'y a plus rien que je puisse faire."',c:9999,a:()=>{}});
+    }
+    items.push({n:'💊 Soins personnels (restore HP)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️ Soigné!','#52b788')}});
+  }else if(t===TT.ARCHITECT){
+    // Architect: sell plans for rafts, bridges, barricades
+    items=[];
+    items.push({n:'═══ PLANS DE CONSTRUCTION ═══',c:9999,a:()=>{}});
+    if(!P._hasRaftPlan){
+      items.push({n:'🛶 Plan: Radeau (retour rapide au village via rivière)',c:20,a:()=>{P._hasRaftPlan=true;ft2(P.x,P.y,'📜 Plan de radeau acquis!','#6ab8d4');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Radeau (acquis) — 5 bûches par trajet',c:9999,a:()=>{}});
+    }
+    if(!P._hasBridgePlan){
+      items.push({n:'🌉 Plan: Pont (traverser les rivières)',c:35,a:()=>{P._hasBridgePlan=true;ft2(P.x,P.y,'📜 Plan de pont acquis!','#b58863');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Pont (acquis) — 10 bûches par pont',c:9999,a:()=>{}});
+    }
+    if(!P._hasBarricadePlan){
+      items.push({n:'🛡️ Plan: Barricade (protéger le village)',c:30,a:()=>{P._hasBarricadePlan=true;ft2(P.x,P.y,'📜 Plan de barricade acquis!','#b58863');updShop()}});
+    }else{
+      items.push({n:'✅ Plan: Barricade (acquis) — 8 bûches par barricade',c:9999,a:()=>{}});
+    }
+    items.push({n:'═══ CONSTRUIRE ═══',c:9999,a:()=>{}});
+    if(P._hasBarricadePlan){
+      items.push({n:`🛡️ Installer une barricade au village (8 bûches, stock: ${P.w})`,c:0,a:()=>{doBuildBarricade();updShop()}});
+      items.push({n:`   Barricades: ${P._barricadesBuilt||0}/10 · Protection: ${Math.floor(vilBarricadeLevel()*100)}%`,c:9999,a:()=>{}});
+    }
+    // Village unrest info
+    if((P._vilUnrest||0)>0){
+      const unrest=Math.floor(P._vilUnrest||0);
+      items.push({n:`   ⚠️ Inquiétude du village: ${unrest}%`,c:9999,a:()=>{}});
+      if(unrest>50) items.push({n:'   🔴 Les villageois paniquent!',c:9999,a:()=>{}});
     }
   }else if(t===TT.LUTH){
     // Luthier: instrument collection (wood→instruments)
@@ -4737,6 +5222,7 @@ function updShop(){
           ft2(P.x,P.y,`💰+${pay}`,'#DAA520');
           if(delivered>=ct.amount){
             ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
+            addDestruction(3); // completing contracts for the Enterprise = destruction
             P._contract=null;
             P._contractsDone=(P._contractsDone||0)+1;
             generateContract(); // new contract immediately
@@ -4757,6 +5243,39 @@ function updShop(){
     if(P._debt>0){
       items.push({n:`💸 Rembourser (${Math.min(P.g,P._debt)} or)`,c:0,cd:1,a:()=>{if(P._debt>0&&P.g>0){const pay=Math.min(P.g,P._debt);P.g-=pay;P._debt-=pay;ft2(P.x,P.y,`📋-${pay}`,'#52b788');if(P._debt<=0)ft2(P.x,P.y-1,'✅ Libre!','#52b788')}}});
       items.push({n:`📋 Dette: ${P._debt} (intérêt ${Math.floor(TUNING.debtInterestRate*100)}%/min)`,c:9999,a:()=>{}});
+    }
+
+    // 4. Special Contracts (refusable boss biome contracts)
+    if(P._bossContractEast==='offered'){
+      items.push({n:'═══ CONTRAT SPÉCIAL ═══',c:9999,a:()=>{}});
+      items.push({n:'🪤 Contrat: Éliminer l\'Arbre-Pieuvre (Est)',c:9999,a:()=>{}});
+      items.push({n:'   💰 Récompense: 500 or',c:9999,a:()=>{}});
+      items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractEast='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Arbre-Pieuvre','#ffd700');ft2(P.x,P.y-1,'L\'est de la forêt vous attend...','#aaa')}});
+      items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractEast='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric fronce les sourcils.','#e74c3c')}});
+    }else if(P._bossContractEast==='accepted'&&bossEast&&bossEast.defeated){
+      items.push({n:'🏆 Réclamer: Arbre-Pieuvre éliminé (500 or)',c:0,a:()=>{P._bossContractEast='done';P.g+=500;addDestruction(8);ft2(P.x,P.y,'💰+500','#ffd700');sfxContract()}});
+    }
+    if(P._bossContractWest==='offered'){
+      items.push({n:'═══ CONTRAT SPÉCIAL ═══',c:9999,a:()=>{}});
+      items.push({n:'🐻 Contrat: Éliminer l\'Ours Ancestral (Ouest)',c:9999,a:()=>{}});
+      items.push({n:'   💰 Récompense: 600 or',c:9999,a:()=>{}});
+      items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractWest='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Ours Ancestral','#ffd700');ft2(P.x,P.y-1,'L\'ouest de la forêt vous attend...','#aaa')}});
+      items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractWest='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric serre les dents.','#e74c3c')}});
+    }else if(P._bossContractWest==='accepted'&&bossWest&&bossWest.defeated){
+      items.push({n:'🏆 Réclamer: Ours Ancestral éliminé (600 or)',c:0,a:()=>{P._bossContractWest='done';P.g+=600;addDestruction(8);ft2(P.x,P.y,'💰+600','#ffd700');sfxContract()}});
+    }
+    // 5. Final Contract (refusable — cut the Primordial Tree)
+    if(P._finalContractState==='offered'){
+      items.push({n:'═══ CONTRAT FINAL ═══',c:9999,a:()=>{}});
+      items.push({n:'🌳 Couper l\'Arbre Primordial',c:9999,a:()=>{}});
+      items.push({n:'   💰 Récompense: 2000 or + soins pour grand-mère',c:9999,a:()=>{}});
+      items.push({n:'   ⚠️ « C\'est un contrat sans retour. »',c:9999,a:()=>{}});
+      items.push({n:'✅ Accepter le contrat final',c:0,a:()=>{P._finalContractState='accepted';addDestruction(10);ft2(P.x,P.y,'📜 Contrat final accepté','#8b0000');ft2(P.x,P.y-1,'Le cœur de la forêt...','#aaa')}});
+      items.push({n:'❌ Refuser catégoriquement',c:0,a:()=>{P._finalContractState='refused';addComprehension(5);addRestauration(3);ft2(P.x,P.y,'📜 Contrat final refusé!','#52b788');ft2(P.x,P.y-1,'« Vous le regretterez. »','#e74c3c')}});
+    }else if(P._finalContractState==='accepted'){
+      items.push({n:'📜 Contrat final: Couper l\'Arbre Primordial (en cours)',c:9999,a:()=>{}});
+    }else if(P._finalContractState==='refused'){
+      items.push({n:'📜 Contrat final: REFUSÉ',c:9999,a:()=>{}});
     }
   }else{
     items=[
@@ -4859,6 +5378,59 @@ function dGround(sx,sy,wx,wy){
   }
   // Water
   if(tile===TT.WA){const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];if(ws)X.drawImage(ws,0,0,32,32,px2,py2,s,s);return}
+  // River (flowing water — distinct blue with flow lines)
+  if(tile===TT.RIVER){
+    const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];
+    if(ws) X.drawImage(ws,0,0,32,32,px2,py2,s,s);
+    else{X.fillStyle='#1a5a8a';X.fillRect(px2,py2,s,s)}
+    // Flow lines overlay — white streaks moving south
+    X.globalAlpha=0.15;X.fillStyle='#aaddff';
+    const flowOff=Math.floor(gt*40)%s;
+    for(let i=0;i<3;i++){
+      const lx=px2+s*0.15+i*s*0.3;
+      const ly=py2+((flowOff+i*s*0.35)%s);
+      X.fillRect(lx,ly,s*0.08,s*0.25);
+    }
+    X.globalAlpha=1;
+    // Darker edges to distinguish from ponds
+    X.fillStyle='rgba(10,40,60,0.25)';
+    X.fillRect(px2,py2,s*0.1,s);X.fillRect(px2+s*0.9,py2,s*0.1,s);
+    return;
+  }
+  // Bridge (wooden planks over river — walkable)
+  if(tile===TT.BRIDGE){
+    // Draw river underneath
+    const fi=Math.floor(gt*3)%8;const ws=_s['wa'+fi];
+    if(ws) X.drawImage(ws,0,0,32,32,px2,py2,s,s);
+    else{X.fillStyle='#1a5a8a';X.fillRect(px2,py2,s,s)}
+    // Wooden planks
+    X.fillStyle='#8a6a3a';X.fillRect(px2+s*0.1,py2,s*0.8,s);
+    X.fillStyle='#7a5a2a';
+    for(let i=0;i<4;i++){
+      const py=py2+i*s*0.25+s*0.02;
+      X.fillRect(px2+s*0.1,py,s*0.8,s*0.2);
+      X.strokeStyle='#5a3a1a';X.lineWidth=1;X.strokeRect(px2+s*0.1,py,s*0.8,s*0.2);
+    }
+    // Railings
+    X.fillStyle='#6a4a20';X.fillRect(px2+s*0.08,py2,s*0.06,s);X.fillRect(px2+s*0.86,py2,s*0.06,s);
+    return;
+  }
+  // Village Barricade (spiky wooden fence)
+  if(tile===TT.VIL_BARRICADE){
+    X.fillStyle=(wx+wy)%2?'#c9a86c':'#bfa060';X.fillRect(px2,py2,s,s);
+    // Stakes
+    X.fillStyle='#6a4a20';
+    for(let i=0;i<4;i++){
+      const sx2=px2+s*0.1+i*s*0.22;
+      X.fillRect(sx2,py2+s*0.15,s*0.12,s*0.7);
+      // Pointed top
+      X.beginPath();X.moveTo(sx2,py2+s*0.15);X.lineTo(sx2+s*0.06,py2);X.lineTo(sx2+s*0.12,py2+s*0.15);X.fill();
+    }
+    // Horizontal beams
+    X.fillStyle='#5a3a15';X.fillRect(px2+s*0.05,py2+s*0.4,s*0.9,s*0.08);
+    X.fillRect(px2+s*0.05,py2+s*0.65,s*0.9,s*0.08);
+    return;
+  }
 
   // Forest floor — HD textured ground tile
   if(cr>.5){
@@ -4924,6 +5496,39 @@ function dObj(wx,wy){
   else if(tile===TT.CARTO){X.fillStyle='#3a6b9f';X.fillRect(wx+8,wy-8,48,48);X.fillStyle='#2a5a8a';X.fillRect(wx+12,wy-4,40,40);X.fillStyle='#f5e6c8';X.fillRect(wx+20,wy+4,24,24);X.fillStyle='#4a90d9';X.fillRect(wx+48,wy-14,12,8);X.fillStyle='#5a3a1a';X.fillRect(wx+46,wy-18,4,22)}
   else if(tile===TT.ANTHRO){X.fillStyle='#8b6914';X.fillRect(wx+6,wy-6,52,46);X.fillStyle='#a0782a';X.fillRect(wx+10,wy-2,44,38);X.fillStyle='#f0e6d0';X.fillRect(wx+16,wy+6,12,20);X.fillStyle='#daa520';X.fillRect(wx+36,wy+8,8,16)}
   else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(wx+4,wy-12,56,52);X.fillStyle='#4a5a3a';X.fillRect(wx+8,wy-8,48,44);X.fillStyle='#2a3a1a';X.fillRect(wx+2,wy-16,60,8);X.fillStyle='#1a2a0a';X.fillRect(wx+24,wy+4,16,28);X.fillStyle='#52b788';X.fillRect(wx+6,wy-10,4,20)}
+  else if(tile===TT.DOCTOR){
+    // Doctor's office — clinical, small building
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#e8e0d0';X.fillRect(sx2+6*SC,sy2-8*SC,52*SC,44*SC);
+    X.fillStyle='#d0c8b8';X.fillRect(sx2+10*SC,sy2-4*SC,44*SC,36*SC);
+    X.fillStyle='#c0b8a8';X.fillRect(sx2+4*SC,sy2-12*SC,56*SC,6*SC);
+    // Red cross
+    X.fillStyle='#cc3333';
+    X.fillRect(sx2+28*SC,sy2-10*SC,8*SC,4*SC);
+    X.fillRect(sx2+30*SC,sy2-12*SC,4*SC,8*SC);
+    // Door
+    X.fillStyle='#6a5a4a';X.fillRect(sx2+26*SC,sy2+8*SC,12*SC,24*SC);
+    // Window
+    X.fillStyle='#aaccee';X.fillRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+    X.strokeStyle='#888';X.lineWidth=1*SC;X.strokeRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+  }
+  else if(tile===TT.ARCHITECT){
+    // Architect's workshop — wooden structure with blueprint scroll
+    const sx2=px2,sy2=py2;
+    X.fillStyle='#7a5a3a';X.fillRect(sx2+4*SC,sy2-10*SC,56*SC,48*SC);
+    X.fillStyle='#8a6a4a';X.fillRect(sx2+8*SC,sy2-6*SC,48*SC,40*SC);
+    X.fillStyle='#6a4a2a';X.fillRect(sx2+2*SC,sy2-14*SC,60*SC,8*SC);
+    // Door
+    X.fillStyle='#5a3a1a';X.fillRect(sx2+24*SC,sy2+10*SC,16*SC,24*SC);
+    // Window
+    X.fillStyle='#aaccdd';X.fillRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+    X.strokeStyle='#6a5030';X.lineWidth=1*SC;X.strokeRect(sx2+12*SC,sy2+2*SC,10*SC,10*SC);
+    // Blueprint scroll on sign
+    X.fillStyle='#f0e8c8';X.fillRect(sx2+44*SC,sy2-16*SC,10*SC,14*SC);
+    X.fillStyle='#4a7aaa';X.fillRect(sx2+46*SC,sy2-13*SC,6*SC,1.5*SC);
+    X.fillRect(sx2+46*SC,sy2-10*SC,6*SC,1.5*SC);
+    X.fillRect(sx2+46*SC,sy2-7*SC,4*SC,1.5*SC);
+  }
   else if(tile===TT.HERM_E){
     // Estelle's training ground — combat-themed hut
     const sx2=px2,sy2=py2;
@@ -4958,19 +5563,63 @@ function dObj(wx,wy){
     X.strokeStyle='#888';X.lineWidth=1*SC;X.beginPath();X.moveTo(sx2+44*SC,sy2-6*SC);X.lineTo(sx2+52*SC,sy2-14*SC);X.stroke();
   }
   else if(tile===TT.BROKEN_AXE){
-    // Broken axe on the ground — glowing relic
+    // Broken axe stuck in a tree stump — glowing relic in clearing
     const sx2=px2,sy2=py2;
     const pulse=Math.sin(gt*2)*.15+.85;
-    X.globalAlpha=.15*pulse;X.fillStyle='#daa520';
-    X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T/2*SC,20*SC,20*SC,0,0,Math.PI*2);X.fill();
+    // Pulsing golden aura
+    X.globalAlpha=.12*pulse;X.fillStyle='#daa520';
+    X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T/2*SC,22*SC,22*SC,0,0,Math.PI*2);X.fill();
     X.globalAlpha=1;
-    // Axe handle
-    X.fillStyle='#6a4a2a';X.fillRect(sx2+10*SC,sy2+8*SC,6*SC,28*SC);
-    // Broken blade
-    X.fillStyle='#8a7a5a';X.fillRect(sx2+6*SC,sy2+4*SC,14*SC,8*SC);
-    X.fillStyle='#6a6a5a';X.fillRect(sx2+16*SC,sy2+6*SC,8*SC,6*SC);
-    // Crack
-    X.fillStyle='#333';X.fillRect(sx2+14*SC,sy2+5*SC,2*SC,6*SC);
+    // Tree stump (large, old)
+    X.fillStyle='#5a4020';X.fillRect(sx2+12*SC,sy2+18*SC,40*SC,18*SC); // stump body
+    X.fillStyle='#4a3418';X.fillRect(sx2+10*SC,sy2+16*SC,44*SC,4*SC); // stump top rim
+    X.fillStyle='#6a5030';X.fillRect(sx2+16*SC,sy2+20*SC,32*SC,14*SC); // stump face
+    // Tree rings on stump top
+    X.strokeStyle='#7a6040';X.lineWidth=1*SC;
+    X.beginPath();X.ellipse(sx2+32*SC,sy2+18*SC,14*SC,3*SC,0,0,Math.PI*2);X.stroke();
+    X.beginPath();X.ellipse(sx2+32*SC,sy2+18*SC,8*SC,2*SC,0,0,Math.PI*2);X.stroke();
+    // Moss on stump
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+10*SC,sy2+30*SC,6*SC,6*SC);
+    X.fillStyle='#4a7a4a';X.fillRect(sx2+46*SC,sy2+28*SC,8*SC,8*SC);
+    // Axe handle sticking up from stump (embedded)
+    X.fillStyle='#7a5a3a';X.fillRect(sx2+29*SC,sy2-6*SC,6*SC,24*SC); // handle
+    X.fillStyle='#6a4a2a';X.fillRect(sx2+28*SC,sy2-8*SC,8*SC,4*SC); // grip
+    // Broken blade at top of handle
+    X.fillStyle='#8a7a5a';X.fillRect(sx2+22*SC,sy2-14*SC,12*SC,8*SC); // blade left
+    X.fillStyle='#6a6a5a';X.fillRect(sx2+34*SC,sy2-12*SC,6*SC,6*SC); // blade right (broken short)
+    // Crack in blade
+    X.fillStyle='#333';X.fillRect(sx2+30*SC,sy2-13*SC,2*SC,6*SC);
+    // Subtle glow on blade
+    X.globalAlpha=.2*pulse;X.fillStyle='#ffd700';
+    X.fillRect(sx2+22*SC,sy2-16*SC,18*SC,12*SC);
+    X.globalAlpha=1;
+  }
+  else if(tile===TT.CABIN_ABAND){
+    // Abandoned cabin in the deep forest clearing
+    const sx2=px2,sy2=py2;
+    // Cabin body (weathered dark wood)
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+2*SC,sy2-4*SC,60*SC,44*SC);
+    X.fillStyle='#4a3a2a';X.fillRect(sx2+6*SC,sy2+0*SC,52*SC,36*SC);
+    // Roof (sagging, damaged)
+    X.fillStyle='#2a1a0a';X.fillRect(sx2-2*SC,sy2-12*SC,68*SC,10*SC);
+    X.fillStyle='#3a2818';X.fillRect(sx2+2*SC,sy2-16*SC,60*SC,6*SC);
+    X.fillStyle='#2a1a0a';X.fillRect(sx2+10*SC,sy2-18*SC,44*SC,4*SC);
+    // Hole in roof
+    X.fillStyle='#1a1a1a';X.fillRect(sx2+36*SC,sy2-14*SC,10*SC,8*SC);
+    // Door (ajar, dark)
+    X.fillStyle='#1a1008';X.fillRect(sx2+24*SC,sy2+8*SC,16*SC,28*SC);
+    X.fillStyle='#2a1a0a';X.fillRect(sx2+24*SC,sy2+8*SC,3*SC,28*SC); // door frame left
+    // Window (broken, dark)
+    X.fillStyle='#1a2a2a';X.fillRect(sx2+8*SC,sy2+4*SC,12*SC,10*SC);
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+13*SC,sy2+4*SC,2*SC,10*SC); // window frame
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+8*SC,sy2+8*SC,12*SC,2*SC);
+    // Moss & overgrowth on walls
+    X.fillStyle='#2a5a2a';X.fillRect(sx2+2*SC,sy2+30*SC,14*SC,10*SC);
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+50*SC,sy2+26*SC,12*SC,14*SC);
+    X.fillStyle='#1a4a1a';X.fillRect(sx2+4*SC,sy2-6*SC,8*SC,6*SC);
+    // Vines on side
+    X.fillStyle='#2a5a2a';X.fillRect(sx2+58*SC,sy2-10*SC,4*SC,30*SC);
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+60*SC,sy2-4*SC,4*SC,8*SC);
   }
   else if(tile===TT.SEED_TILE){
     // Growing seed — small sprout
@@ -5086,6 +5735,14 @@ function dPlayer(){
       const nx3=px3+dx2,ny3=py3+dy2;
       if(nx3>=0&&ny3>=0&&nx3<MW&&ny3<MH){const t=map[ny3][nx3];if(isBld(t)){nearBld=t;nearBldX=nx3;nearBldY=ny3}}
     }
+    // Also check for river nearby
+    let nearRiver=false,nearRiverX=0,nearRiverY=0;
+    if(!nearBld){
+      for(let dy2=-2;dy2<=2&&!nearRiver;dy2++)for(let dx2=-2;dx2<=2&&!nearRiver;dx2++){
+        const nx3=px3+dx2,ny3=py3+dy2;
+        if(nx3>=0&&ny3>=0&&nx3<MW&&ny3<MH&&map[ny3][nx3]===TT.RIVER){nearRiver=true;nearRiverX=nx3;nearRiverY=ny3}
+      }
+    }
     if(nearBld){
       const pulse=.6+Math.sin(gt*4)*.3;
       X.globalAlpha=pulse;
@@ -5101,6 +5758,18 @@ function dPlayer(){
       X.font=`bold ${9*SC}px monospace`;
       X.fillStyle='#000';X.fillText('[E]',sx+1,sy-22*SC+1);
       X.fillStyle='#ffd700';X.fillText('[E]',sx,sy-22*SC);
+      X.globalAlpha=1;
+    }else if(nearRiver){
+      const pulse=.6+Math.sin(gt*4)*.3;
+      X.globalAlpha=pulse;
+      X.textAlign='center';
+      const rsx=(nearRiverX-smCam.x)*T*SC+T/2*SC, rsy=(nearRiverY-smCam.y)*T*SC;
+      X.font=`bold ${7*SC}px monospace`;
+      X.fillStyle='#000';X.fillText('Rivière',rsx+1,rsy-20*SC+1);
+      X.fillStyle='#6ab8d4';X.fillText('Rivière',rsx,rsy-20*SC);
+      X.font=`bold ${9*SC}px monospace`;
+      X.fillStyle='#000';X.fillText('[E]',sx+1,sy-22*SC+1);
+      X.fillStyle='#6ab8d4';X.fillText('[E]',sx,sy-22*SC);
       X.globalAlpha=1;
     }
   }
@@ -5383,6 +6052,13 @@ function dMM(){
     else if(t===TT.HERM)c='#556b2f';
     else if(t===TT.LUTH)c='#d4a017';
     else if(t===TT.BARR)c='#8b4513';
+    else if(t===TT.BROKEN_AXE)c='#daa520';
+    else if(t===TT.CABIN_ABAND)c='#3a2a1a';
+    else if(t===TT.DOCTOR)c='#4a8aaa';
+    else if(t===TT.ARCHITECT)c='#b58863';
+    else if(t===TT.RIVER)c='#1a6aaa';
+    else if(t===TT.BRIDGE)c='#8a6a3a';
+    else if(t===TT.VIL_BARRICADE)c='#6a4a20';
     else if(isDeco(t))c='#b0a070';
     else if(t===TT.HERB)c='#52b788';
     else if(t===TT.MUSH)c='#9060b0';
@@ -5977,6 +6653,7 @@ function plantSeed(tx,ty){
   P.seeds--;
   P._seedsPlanted=(P._seedsPlanted||0)+1;
   P._saplings++;
+  addRestauration(2); // planting is restoration
   ft2(tx+.5,ty-.5,'🌱 Graine plantée!','#52b788');
   sp(tx+.5,ty+.5,'#52b788',8);sfxPickup();
   // Reduce corruption slightly
@@ -6070,6 +6747,7 @@ function performRitual(){
     }
   }
   P._zonesRestored=(P._zonesRestored||0)+1;
+  addRestauration(5); // ritual purification is a major restoration act
   shake=.4;
   checkPurification();
   return true;
@@ -6088,55 +6766,314 @@ function checkPurification(){
   }
 }
 
+// ============ PRIMORDIAL TREE ACTIONS ============
+function doPrimDeposit(){
+  if(P._ending)return;
+  shopOn=false;document.getElementById('shp').style.display='none';
+  P._primDeposited=true;
+  P._ending='deposit';
+  shake=.5;
+  ft2(P.x,P.y,'🪓 Tu déposes ta hache au pied de l\'arbre.','#ffd700');
+  ft2(P.x,P.y-1.5,'La forêt respire...','#52b788');
+  sp(P.x,P.y,'#ffd700',20);sp(P.x,P.y,'#52b788',15);
+  sfxLore();
+  setTimeout(()=>triggerEnding('deposit'),3000);
+}
+function doPrimCut(){
+  if(P._ending)return;
+  shopOn=false;document.getElementById('shp').style.display='none';
+  P._primStartedCut=true;
+  P._primHits=(P._primHits||0)+1;
+  addDestruction(10);
+  if(P._primHits>=5){
+    P._primCut=true;P._ending='cut';
+    // Find and replace the primordial tree tile
+    const pp=window._primPos||{x:CX,y:10};
+    if(map[pp.y])map[pp.y][pp.x]=TT.ST;
+    triggerEnding('cut');
+  }else{
+    shake=.5;sp(P.x,P.y,'#DAA520',15);
+    ft2(P.x,P.y,(5-P._primHits)+' coups restants...','#e74c3c');
+  }
+}
+function doPrimRenounce(){
+  if(P._ending)return;
+  shopOn=false;document.getElementById('shp').style.display='none';
+  P._ending='renounce';
+  shake=.3;
+  ft2(P.x,P.y,'...','#aaa');
+  ft2(P.x,P.y-1,'Tu recules. L\'arbre porte tes cicatrices.','#e9c46a');
+  sp(P.x,P.y,'#e9c46a',10);
+  setTimeout(()=>triggerEnding('renounce'),3000);
+}
+
+// ============ RIVER / RAFT / BRIDGE / BARRICADE SYSTEM ============
+function spawnArchitect(){
+  if(P._architectArrived)return;
+  P._architectArrived=true;
+  const CX=128, VIL_Y=MH-12;
+  // Place architect in village — near forge side
+  const ax=CX-4, ay=VIL_Y+6;
+  if(ay<MH&&ax>0&&ax<MW){
+    map[ay][ax]=TT.ARCHITECT;
+    P._architectPos={x:ax,y:ay};
+  }
+}
+function doRaftToVillage(rx,ry){
+  const raftCost=5;
+  if(P.w<raftCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasRaftPlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=raftCost;
+  P.wv=Math.max(0,(P.wv||0)-raftCost);
+  shopOn=false;document.getElementById('shp').style.display='none';
+  // Teleport animation
+  shake=.3;sp(P.x,P.y,'#4a9adf',15);
+  ft2(P.x,P.y,'🛶 En route vers le village...','#6ab8d4');
+  // Teleport to village entrance
+  const CX=128, VIL_Y=MH-12;
+  setTimeout(()=>{
+    P.x=CX;P.y=VIL_Y-1;
+    sp(P.x,P.y,'#4a9adf',10);
+    ft2(P.x,P.y,'🏘️ Arrivé au village!','#52b788');
+  },500);
+}
+function doBuildBridge(rx,ry){
+  const bridgeCost=10;
+  if(P.w<bridgeCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasBridgePlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=bridgeCost;
+  P.wv=Math.max(0,(P.wv||0)-bridgeCost);
+  // Replace river tile with bridge + adjacent river tiles vertically
+  map[ry][rx]=TT.BRIDGE;
+  // Also bridge adjacent river tiles (make it cross the full width)
+  for(let dx=-2;dx<=2;dx++){
+    const nx=rx+dx;
+    if(nx>=0&&nx<MW&&map[ry][nx]===TT.RIVER) map[ry][nx]=TT.BRIDGE;
+  }
+  P._bridgesBuilt=(P._bridgesBuilt||0)+1;
+  shopOn=false;document.getElementById('shp').style.display='none';
+  shake=.2;sp(rx,ry,'#8a6a3a',12);
+  ft2(P.x,P.y,'🌉 Pont construit!','#b58863');
+  addMaitrise(2);
+}
+function doBuildBarricade(){
+  const barrCost=8;
+  if(P.w<barrCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
+  if(!P._hasBarricadePlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  P.w-=barrCost;
+  P.wv=Math.max(0,(P.wv||0)-barrCost);
+  // Place barricade at northern edge of village
+  const CX=128, VIL_Y=MH-12;
+  let placed=false;
+  const barrY=VIL_Y-1;
+  // Find empty spots along the village border
+  for(let bx=CX-12;bx<=CX+12;bx++){
+    if(barrY>=0&&barrY<MH&&bx>=0&&bx<MW){
+      const t=map[barrY][bx];
+      if(t===TT.G||t===TT.PA||t===TT.BU||t===TT.FL){
+        map[barrY][bx]=TT.VIL_BARRICADE;
+        placed=true;
+        P._barricadesBuilt=(P._barricadesBuilt||0)+1;
+        break;
+      }
+    }
+  }
+  if(placed){
+    shake=.2;sp(P.x,P.y,'#8a6a3a',8);
+    ft2(P.x,P.y,'🛡️ Barricade installée!','#b58863');
+    addRestauration(1);
+  }else{
+    ft2(P.x,P.y,'Plus de place pour les barricades!','#e74c3c');
+    P.w+=barrCost; // refund
+  }
+}
+// Check if village is protected by barricades (enough barricades = protected)
+function vilBarricadeLevel(){
+  return Math.min(1,(P._barricadesBuilt||0)/10); // 10 barricades = fully protected
+}
+// Village unrest system: mobs near village increase unrest, barricades reduce it
+let _vilUnrestT=0;
+function updVilUnrest(d){
+  _vilUnrestT+=d;if(_vilUnrestT<2)return;_vilUnrestT=0;
+  const VIL_Y=MH-12,CX=128;
+  const vilRadius=20; // check mobs within 20 tiles of village center
+  let nearbyMobs=0;
+  for(const e of ents){
+    const dx=e.x-CX,dy=e.y-VIL_Y;
+    if(Math.sqrt(dx*dx+dy*dy)<vilRadius) nearbyMobs++;
+  }
+  // Barricades repel: each barricade reduces effective mob count
+  const barrProtection=vilBarricadeLevel();
+  const effectiveMobs=Math.max(0,nearbyMobs-Math.floor(barrProtection*8));
+  // Update unrest: rises with mobs, decays without
+  if(effectiveMobs>0){
+    P._vilUnrest=Math.min(100,(P._vilUnrest||0)+effectiveMobs*2);
+  }else{
+    P._vilUnrest=Math.max(0,(P._vilUnrest||0)-1);
+  }
+  // Barricades physically block mobs: push away mobs that hit barricade tiles
+  for(const e of ents){
+    const etx=Math.floor(e.x),ety=Math.floor(e.y);
+    if(etx>=0&&ety>=0&&etx<MW&&ety<MH&&map[ety][etx]===TT.VIL_BARRICADE){
+      // Push mob north (away from village)
+      e.y-=1.5;e.hp-=1; // barricades damage mobs slightly
+      sp(e.x,e.y,'#8a6a3a',5);
+    }
+  }
+  // Also check river tiles to detect first river sighting
+  if(!P._riverSeen){
+    const px2=Math.floor(P.x),py2=Math.floor(P.y);
+    for(let dy=-VH;dy<=VH;dy++)for(let dx=-VW;dx<=VW;dx++){
+      const nx=px2+dx,ny=py2+dy;
+      if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny][nx]===TT.RIVER){
+        P._riverSeen=true;
+        ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');
+        spawnArchitect();
+        return;
+      }
+    }
+  }
+}
+
 // ============ ENDING SYSTEM ============
 let endingActive=false;
 let endPhase=0, endTimer=0, endCharIdx=0, endTypeTimer=0;
-const ENDINGS={
-  protect:{
-    title:'FIN - Le Pacte Renouvel\u00e9',
-    scenes:[
-      {text:"Le Gardien s'effondre. La terre cesse de trembler.",dur:6},
-      {text:"Tu regardes l'Arbre Primordial. Intact. Majestueux.",dur:5.5},
-      {text:"La for\u00eat respire. Les oiseaux reviennent.",dur:5},
-      {text:"Aldric attend au village, furieux. Tu ne livres pas le bois.",dur:5.5},
-      {text:"\u00ab Vous ne comprenez pas ! L'Entreprise n'acceptera pas... \u00bb",dur:5},
-      {text:"Tu poses ta hache. \u00ab Je comprends mieux que vous. \u00bb",dur:5},
-      {text:"Ta grand-m\u00e8re sourit. \u00ab Ton grand-p\u00e8re serait fier. \u00bb",dur:6},
-      {text:"La for\u00eat vivra. Le Pacte est renouvel\u00e9.",dur:6},
-      {text:"FIN",dur:4},
-    ],col:'#52b788'
-  },
-  cut:{
-    title:'FIN - Le Silence',
-    scenes:[
-      {text:"L'Arbre Primordial tombe. Le sol se fissure.",dur:6},
-      {text:"Un cri \u2014 pas un son, mais un d\u00e9chirement dans l'\u00e2me.",dur:5.5},
-      {text:"La for\u00eat meurt. Arbre apr\u00e8s arbre. Le vert devient gris.",dur:6},
-      {text:"Aldric sourit. L'or coule. Mais le village se vide.",dur:5.5},
-      {text:"Ta grand-m\u00e8re a ses rem\u00e8des. Mais elle ne regarde plus par la fen\u00eatre.",dur:6},
-      {text:"\u00ab Il n'y a plus rien \u00e0 voir \u00bb, murmure-t-elle.",dur:5},
-      {text:"Le silence. C'est \u00e7a, la fin. Pas un fracas. Un silence.",dur:6},
-      {text:"FIN",dur:4},
-    ],col:'#8b0000'
-  },
-  purify:{
-    title:'FIN - Le Cycle Restaur\u00e9',
-    scenes:[
-      {text:"Les racines guident ta main. La s\u00e8ve coule, dor\u00e9e, vivante.",dur:6},
-      {text:"Chaque pousse plant\u00e9e est une promesse. Chaque rituel, une r\u00e9paration.",dur:6},
-      {text:"La corruption recule. Lentement. Puis d'un coup.",dur:5},
-      {text:"L'Arbre Primordial pulse d'une lumi\u00e8re nouvelle. Plus forte qu'avant.",dur:6},
-      {text:"Les ermites sortent de l'ombre. \u00ab Le Cycle est restaur\u00e9. \u00bb",dur:5.5},
-      {text:"Aldric est parti. L'Entreprise cherchera d'autres for\u00eats.",dur:5},
-      {text:"Mais pas celle-ci. Plus jamais celle-ci.",dur:5},
-      {text:"Ta grand-m\u00e8re se l\u00e8ve de son lit. Ses yeux brillent.",dur:5.5},
-      {text:"\u00ab La for\u00eat gu\u00e9rit, et moi avec. C'est le Pacte. \u00bb",dur:6},
-      {text:"Tu reprends ta hache. Non pour d\u00e9truire. Pour garder.",dur:6},
-      {text:"Le Gardien des For\u00eats.",dur:5},
-      {text:"FIN",dur:4},
-    ],col:'#DAA520'
+// === MODULAR ENDING BUILDER ===
+// Endings are composed of conditional blocks based on axes, quests, and grandmother state
+function buildEnding(type){
+  const s=[];const d=getDestruction(),r=getRestauration(),c=getComprehension(),m=getMaitrise();
+  const loreComplete=P._sacredLore&&P._sacredLore.length>=SACRED_LORE.length;
+  const hasLegAxe=P._hasLegendaryAxe;
+  const gmAlive=P._gmAlive;
+  const manyContracts=(P._contractsDone||0)>8;
+  const fewContracts=(P._contractsDone||0)<=3;
+  const restoHigh=r>0.6;
+  const noQuests=!hasLegAxe&&!loreComplete&&!restoHigh&&m<0.3;
+
+  if(type==='deposit'){
+    // === FIN: DÉPOSER LA HACHE ===
+    // Base block (always)
+    s.push({text:"Tu poses ta hache au pied de l'Arbre Primordial.",dur:5.5});
+    s.push({text:"La forêt respire. Le silence est doux. La lumière filtre à travers la canopée.",dur:6});
+    // Bloc Hache Légendaire
+    if(hasLegAxe){
+      s.push({text:"Le Gardien apparaît. Il regarde la Hache Légendaire... et s'incline.",dur:6});
+      s.push({text:"Tu avais le pouvoir ultime. Et tu as choisi de renoncer.",dur:5.5});
+    }
+    // Bloc Restauration
+    if(restoHigh){
+      s.push({text:"Les zones purifiées reverdissent. La corruption recule comme une marée.",dur:5.5});
+      s.push({text:"Les ermites sortent de l'ombre. « Le Cycle est restauré. »",dur:5});
+    }
+    // Bloc Compréhension
+    if(loreComplete){
+      s.push({text:"Une vision t'envahit — le Pacte originel, l'ancien héros, la vérité entière.",dur:6});
+      s.push({text:"« Trois chemins : La destruction. Le sacrifice. La compréhension. »",dur:5.5});
+      s.push({text:"« Seul le troisième brise le Cycle. » Tu as compris.",dur:5});
+    }
+    // Bloc Entreprise
+    if(manyContracts) s.push({text:"Aldric attend au village, furieux, trahi. « Vous ne comprenez pas ! »",dur:5.5});
+    else if(fewContracts) s.push({text:"L'Entreprise est déjà partie. Aldric n'est qu'un souvenir.",dur:5});
+    else s.push({text:"Aldric observe de loin. Il comprend qu'il a perdu.",dur:5});
+    // Bloc Grand-mère
+    if(gmAlive){
+      s.push({text:"Ta grand-mère sourit. « La forêt guérit, et moi avec. C'est le Pacte. »",dur:6});
+      s.push({text:"Elle se lève de son lit. Ses yeux brillent.",dur:5});
+    }else{
+      s.push({text:"La maison est vide. Le lit de ta grand-mère est froid.",dur:5.5});
+      s.push({text:"Tu as sauvé la forêt. Mais pas tout le monde.",dur:5});
+    }
+    // Nom de la fin
+    if(hasLegAxe&&loreComplete&&restoHigh&&gmAlive) s.push({text:"Le Pacte Renouvelé.",dur:5});
+    else if(restoHigh&&!loreComplete) s.push({text:"Le Réparateur.",dur:4});
+    else if(hasLegAxe&&gmAlive) s.push({text:"Le Gardien des Forêts.",dur:5});
+    else if(noQuests) s.push({text:"Le Silence Doux.",dur:4});
+    else s.push({text:"La forêt vivra.",dur:5});
+    s.push({text:"FIN",dur:4});
+    const title=hasLegAxe&&loreComplete&&restoHigh&&gmAlive?'FIN - Le Pacte Renouvelé':restoHigh?'FIN - Le Réparateur':hasLegAxe?'FIN - Le Gardien des Forêts':noQuests?'FIN - Le Silence Doux':'FIN - La Paix';
+    return{title,scenes:s,col:'#52b788'};
+
+  }else if(type==='cut'){
+    // === FIN: COUPER L'ARBRE ===
+    s.push({text:"L'Arbre Primordial tombe. Le sol se fissure.",dur:6});
+    s.push({text:"Un cri — pas un son, mais un déchirement dans l'âme.",dur:5.5});
+    // Bloc Destruction élevée
+    if(d>0.6){
+      s.push({text:"Le monde est gris. La forêt meurt. Arbre après arbre, le vert devient cendre.",dur:6});
+      s.push({text:"Le village se vide. L'or coule, mais pour combien de temps ?",dur:5.5});
+    }
+    // Bloc Restauration + Couper (dissonance)
+    if(restoHigh){
+      s.push({text:"Les zones purifiées se recorrompent. Chaque pousse meurt. Tout le travail, défait.",dur:6});
+      s.push({text:"La dissonance est insoutenable.",dur:4});
+    }
+    // Bloc Compréhension + Couper (trahison)
+    if(loreComplete){
+      s.push({text:"Tu savais. Les visions du lore se rejouent comme des reproches silencieux.",dur:6});
+      s.push({text:"L'ignorance ne peut pas servir d'excuse. Tu avais vu la vérité.",dur:5.5});
+    }
+    // Bloc Hache Légendaire + Couper (ultime)
+    if(hasLegAxe){
+      s.push({text:"L'arbre tombe en un seul coup. Le bois-titane chante une dernière fois.",dur:6});
+      s.push({text:"Le Gardien ne se relève pas.",dur:4});
+    }
+    // Bloc Rush (aucune quête)
+    if(noQuests){
+      s.push({text:"Pas de vision. Pas de contexte. Juste un arbre qui tombe et un paiement.",dur:6});
+    }
+    // Bloc Entreprise
+    if(manyContracts) s.push({text:"Aldric sourit. L'Entreprise a gagné.",dur:5});
+    else s.push({text:"Le silence s'installe sur ce qui reste.",dur:5});
+    // Bloc Grand-mère
+    if(gmAlive){
+      s.push({text:"« Il n'y a plus rien à voir », murmure ta grand-mère.",dur:5.5});
+      s.push({text:"Le Pacte est brisé.",dur:4});
+    }else{
+      s.push({text:"La maison était déjà vide. Il n'y a plus personne à sauver.",dur:5.5});
+    }
+    s.push({text:"Le silence. C'est ça, la fin. Pas un fracas. Un silence.",dur:6});
+    s.push({text:"FIN",dur:4});
+    const cutTitle=loreComplete?'FIN - La Trahison':restoHigh?'FIN - Le Regret':manyContracts?'FIN - L\'Industrie':noQuests?'FIN - Le Silence':'FIN - La Chute';
+    return{title:cutTitle,scenes:s,col:'#8b0000'};
+
+  }else if(type==='renounce'){
+    // === FIN: RENONCER APRÈS COMBAT ===
+    s.push({text:"Le Gardien gît au sol. L'arbre porte les marques de tes premiers coups.",dur:6});
+    s.push({text:"Tu recules. La hache tremble dans tes mains.",dur:5.5});
+    s.push({text:"Ce n'est pas de la sagesse. C'est du remords.",dur:5});
+    if(hasLegAxe) s.push({text:"La Hache Légendaire vibre. Même elle refuse ce combat inutile.",dur:5.5});
+    if(loreComplete) s.push({text:"Les fragments de lore résonnent. Tu savais... et tu as frappé quand même.",dur:6});
+    s.push({text:"Les cicatrices du combat restent. Mais l'arbre est debout.",dur:5.5});
+    if(gmAlive) s.push({text:"Ta grand-mère ne pose pas de questions. Elle comprend.",dur:5});
+    else s.push({text:"Il n'y a personne à qui raconter ce qui s'est passé.",dur:5});
+    s.push({text:"La Cicatrice.",dur:5});
+    s.push({text:"FIN",dur:4});
+    return{title:'FIN - La Cicatrice',scenes:s,col:'#e9c46a'};
+
+  }else if(type==='purify'){
+    // === FIN: PURIFICATION (triggered automatically) ===
+    s.push({text:"Les racines guident ta main. La sève coule, dorée, vivante.",dur:6});
+    s.push({text:"Chaque pousse plantée est une promesse. Chaque rituel, une réparation.",dur:6});
+    s.push({text:"La corruption recule. Lentement. Puis d'un coup.",dur:5});
+    s.push({text:"L'Arbre Primordial pulse d'une lumière nouvelle. Plus forte qu'avant.",dur:6});
+    s.push({text:"Les ermites sortent de l'ombre. « Le Cycle est restauré. »",dur:5.5});
+    if(fewContracts) s.push({text:"L'Entreprise est déjà partie. Aldric n'est qu'un souvenir.",dur:5});
+    else s.push({text:"Aldric est parti. L'Entreprise cherchera d'autres forêts.",dur:5});
+    s.push({text:"Mais pas celle-ci. Plus jamais celle-ci.",dur:5});
+    if(gmAlive){
+      s.push({text:"Ta grand-mère se lève de son lit. Ses yeux brillent.",dur:5.5});
+      s.push({text:"« La forêt guérit, et moi avec. C'est le Pacte. »",dur:6});
+    }
+    s.push({text:"Tu reprends ta hache. Non pour détruire. Pour garder.",dur:6});
+    s.push({text:"Le Gardien des Forêts.",dur:5});
+    s.push({text:"FIN",dur:4});
+    return{title:'FIN - Le Cycle Restauré',scenes:s,col:'#DAA520'};
   }
-};
+  // Fallback (legacy protect — should not be reached)
+  return{title:'FIN',scenes:[{text:"FIN",dur:4}],col:'#aaa'};
+}
+// ENDINGS is now dynamic — built at trigger time
+let ENDINGS={};
 
 function triggerEnding(type){
   if(endingActive)return;
@@ -6153,7 +7090,7 @@ function triggerEnding(type){
     ov.addEventListener('click',advanceEnding);
     document.addEventListener('keydown',e=>{if(endingActive&&(e.code==='Space'||e.code==='Enter')){e.preventDefault();advanceEnding()}});
   }
-  const ending=ENDINGS[type];
+  const ending=buildEnding(type);ENDINGS[type]=ending;
   ov.style.background=type==='cut'?'#0a0000':type==='purify'?'#0a1208':'#080a06';
   ov.style.color=ending.col;
   ov.style.display='flex';ov.style.opacity='1';
@@ -6169,8 +7106,8 @@ function drawEndScene(type,phase){
   const c=cv.getContext('2d');
   c.clearRect(0,0,800,500);
   
-  if(type==='protect'){
-    // Forest scene - alive, birds, sunlight
+  if(type==='deposit'||type==='protect'){
+    // Forest scene - alive, peaceful, sunlight through canopy
     c.fillStyle='#0a1a08';c.fillRect(0,0,800,500);
     // Trees
     for(let i=0;i<12;i++){
@@ -6186,6 +7123,11 @@ function drawEndScene(type,phase){
     c.fillStyle='#5a4020';c.fillRect(370,100,60,300);
     c.fillStyle='#2a6a2a';c.beginPath();c.arc(400,80,90,0,Math.PI*2);c.fill();
     c.fillStyle='rgba(255,215,0,0.2)';c.beginPath();c.arc(400,80,70,0,Math.PI*2);c.fill();
+    // Axe at base of tree (deposited)
+    if(type==='deposit'){
+      c.fillStyle='#8a7050';c.fillRect(385,395,6,30);
+      c.fillStyle='#aaa';c.beginPath();c.moveTo(380,395);c.lineTo(400,388);c.lineTo(400,402);c.fill();
+    }
   }else if(type==='cut'){
     // Dead forest - grey, stumps, cracked earth
     c.fillStyle='#1a1210';c.fillRect(0,0,800,500);
@@ -6203,8 +7145,30 @@ function drawEndScene(type,phase){
     }
     // Grey sky
     c.fillStyle='rgba(80,70,60,0.3)';c.fillRect(0,0,800,200);
+    // Fallen primordial trunk
+    c.fillStyle='#4a3820';c.fillRect(200,280,400,40);
+    c.fillStyle='#3a2810';c.fillRect(190,310,30,30);
+  }else if(type==='renounce'){
+    // Scarred forest - damaged but standing, amber tones
+    c.fillStyle='#12150a';c.fillRect(0,0,800,500);
+    // Damaged trees still standing
+    for(let i=0;i<10;i++){
+      const tx=50+i*75,ty=210+Math.sin(i*1.3)*25;
+      c.fillStyle='#3a2a10';c.fillRect(tx,ty,14,190);
+      c.fillStyle=`hsl(${45+i*3},40%,${25+phase}%)`;
+      c.beginPath();c.arc(tx+7,ty-15,25+Math.random()*8,0,Math.PI*2);c.fill();
+    }
+    // Wounded primordial tree - still standing with scars
+    c.fillStyle='#5a4020';c.fillRect(370,110,60,290);
+    c.fillStyle='#2a5a2a';c.beginPath();c.arc(400,90,80,0,Math.PI*2);c.fill();
+    // Scars on trunk
+    c.strokeStyle='#8a6a40';c.lineWidth=3;
+    c.beginPath();c.moveTo(380,180);c.lineTo(395,250);c.stroke();
+    c.beginPath();c.moveTo(410,200);c.lineTo(420,270);c.stroke();
+    // Amber haze
+    c.fillStyle='rgba(233,196,106,0.08)';c.fillRect(0,0,800,500);
   }else{
-    // Restoration - golden light, saplings growing, brilliant
+    // Purify / Restoration - golden light, saplings growing, brilliant
     c.fillStyle='#0a1a08';c.fillRect(0,0,800,500);
     // Growing saplings
     for(let i=0;i<20;i++){
@@ -6342,7 +7306,7 @@ function loop(ts){
       spawnGuardian(pp.x,pp.y);
     }
   }
-  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
+  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);shake=Math.max(0,shake-d*4)}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
 
