@@ -121,6 +121,17 @@ const TUNING = {
   enemySpawnRate: 0.002,    // base spawn chance per tick per corrupted tile
   enemyFirstSpawnTime: 240,  // seconds (~4min) before first enemy can spawn
   enemyEscalateTime: 600,   // seconds (10min) enemies get stronger
+  // -- Wolves (nocturnal) --
+  wolfMaxPacks: 3,           // max simultaneous wolf packs
+  wolfPackSize: [2,4],       // min/max wolves per pack
+  wolfHp: 2,
+  wolfSpeed: 1.8,            // fast
+  wolfDmg: 1,
+  wolfAggroRadius: 10,
+  wolfPackRadius: 4,         // wolves stay within this radius of pack center
+  wolfNightThreshold: 0.3,   // nightMul above which wolves spawn
+  wolfDawnFleeThreshold: 0.1,// nightMul below which wolves flee & despawn
+  wolfSpawnCooldown: 30,     // seconds between spawn attempts
   // -- Contracts --
   contractTimeLimit: 120,
   contractBonusMult: 2.0,
@@ -168,6 +179,13 @@ const TUNING_META = {
   'sacredPerBiome': {min:0,max:5,step:1,cat:'Arbres',label:'Sacrés par biome'},
   'enemyMaxBase': {min:4,max:30,step:2,cat:'Ennemis',label:'Max ennemis base'},
   'enemyCutsScaling': {min:0,max:1,step:0.1,cat:'Ennemis',label:'Scaling / coupe'},
+  'wolfMaxPacks': {min:1,max:6,step:1,cat:'Loups',label:'Max meutes'},
+  'wolfHp': {min:1,max:6,step:1,cat:'Loups',label:'PV loup'},
+  'wolfSpeed': {min:0.5,max:3,step:0.1,cat:'Loups',label:'Vitesse loup'},
+  'wolfDmg': {min:1,max:4,step:1,cat:'Loups',label:'Dégâts loup'},
+  'wolfAggroRadius': {min:4,max:16,step:1,cat:'Loups',label:'Rayon aggro'},
+  'wolfNightThreshold': {min:0.1,max:0.6,step:0.05,cat:'Loups',label:'Seuil nuit (spawn)'},
+  'wolfSpawnCooldown': {min:10,max:120,step:5,cat:'Loups',label:'Cooldown spawn (s)'},
   'contractTimeLimit': {min:60,max:600,step:30,cat:'Contrats',label:'Temps limite (s)'},
   'contractBonusMult': {min:1.2,max:4,step:0.2,cat:'Contrats',label:'Bonus prix (×)'},
   'contractLatePenalty': {min:0.1,max:0.9,step:0.1,cat:'Contrats',label:'Pénalité retard (×)'},
@@ -235,7 +253,7 @@ function updateEdStats(){
   if(!el || !editorOpen) return;
   const wl = wildlife||[];
   const corrTiles = _corrSources.length;
-  el.innerHTML = `Coupes: ${cuts} · Ennemis: ${ents.length} · Sources corr: ${corrTiles}<br>` +
+  el.innerHTML = `Coupes: ${cuts} · Ennemis: ${ents.length} · Loups: ${wolves.length} · Sources corr: ${corrTiles}<br>` +
     `Faune: 🦌${wl.filter(w=>w.tp==='deer').length} 🐇${wl.filter(w=>w.tp==='rabbit').length} 🐦${wl.filter(w=>w.tp==='bird').length}<br>` +
     `Or: ${P.g} · Bois: ${P.w} · Sève: ${P.sap} · Dette: ${P._debt||0}<br>` +
     `🧪${P._potions||0} · 🌀${P._encensStock||0} · Stamina: ${Math.floor(P.sta)}/${P.msta} · HP: ${P.hp}/${P.mhp}<br>` +
@@ -308,6 +326,8 @@ let wildlife=[]; // passive fauna
 let gt=0,dayPhase=0.55,shopOn=false,curShop='',dead=false,shake=0,cuts=0;
 let wind={x:0,y:0,t:0};
 let regrowMap=[]; // tracks stumps that will regrow: {ess, time}
+let wolves=[]; // nocturnal wolf packs: {x,y,hp,mhp,spd,dmg,ht,ar,fr,packId,fleeDir}
+let _wolfPacks=0,_wolfSpawnT=0; // pack count & spawn cooldown timer
 let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
   invCap:30,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
   herbs:0,mushrooms:0, // collected from clearings
@@ -396,6 +416,7 @@ const PAL={
   gold:['#DAA520','#B8860B','#FFD700','#CD950C','#E8C030','#F0D848','#c49010'],
   shadow:['#3d2066','#4a2880','#2d1850','#5530a0','#3a1a5a','#4420a0'],
   golem:['#4a2a10','#5e3a1a','#3a1e08','#6b4422','#553215','#7a5530'],
+  wolf:['#4a4a50','#5a5a62','#3a3a42','#686870','#555560','#6e6e78','#48484e'],
   grass:['#52b788','#40916c','#74c69d','#48a078','#5cc090','#3d8b5e','#62c98e','#4aaa7c','#56b48a','#6cc898'],
 };
 
@@ -1338,6 +1359,42 @@ function initSprites(){
       px(c,28,32+oy,'#ff2200');px(c,43,32+oy,'#ff2200');
       px(c,30,34+oy,'#ff4400');px(c,41,34+oy,'#ff4400');
       px(c,34,34+oy,'#ff6600');px(c,37,34+oy,'#ff8800');
+    });
+  }
+
+  // ===== WOLF (56×40 HD, 2 frames) =====
+  for(let f=0;f<2;f++){
+    mkHD('wf'+f,56,40,(c)=>{
+      const oy=f*2;
+      // Body — low, horizontal quadruped silhouette
+      dithEllipse(c,28,22+oy,22,12,PAL.wolf,f*7);
+      // Slightly lighter belly
+      dithEllipse(c,28,26+oy,16,6,['#6e6e78','#7a7a82','#606068'],f*7+10);
+      // Head (front, slightly raised)
+      dithEllipse(c,8,16+oy,8,7,[...PAL.wolf,'#606068'],f*7+20);
+      // Snout
+      rc(c,1,17+oy,5,4,'#3a3a42');rc(c,0,18+oy,3,2,'#2a2a32');
+      // Ears (pointed)
+      rc(c,6,8+oy,3,5,'#4a4a50');rc(c,12,8+oy,3,5,'#4a4a50');
+      px(c,7,9+oy,'#5a5a62');px(c,13,9+oy,'#5a5a62');
+      // Eyes — yellow/amber, menacing
+      rc(c,4,14+oy,3,3,'#ccaa00');px(c,5,15+oy,'#ffdd00');
+      rc(c,11,14+oy,3,3,'#ccaa00');px(c,12,15+oy,'#ffdd00');
+      // Tail (raised, bushy)
+      rc(c,48,14+oy+f,6,5,'#4a4a50');rc(c,50,12+oy+f,4,4,'#555560');
+      px(c,53,13+oy+f,'#686870');
+      // Legs — running animation
+      const legF=f*3;
+      // Front legs
+      rc(c,12,30+oy,3,8-legF,'#3a3a42');rc(c,18,30+oy,3,6+legF,'#3a3a42');
+      // Back legs
+      rc(c,34,30+oy,3,6+legF,'#3a3a42');rc(c,40,30+oy,3,8-legF,'#3a3a42');
+      // Fur detail
+      for(let i=0;i<12;i++){
+        const fx=10+Math.floor(Math.random()*32);
+        const fy=16+Math.floor(Math.random()*12);
+        px(c,fx,fy+oy,`rgba(90,90,98,${0.15+Math.random()*0.15})`);
+      }
     });
   }
 
@@ -3327,6 +3384,8 @@ function updWildlife(d){
       w.fleeX=w.x+(dx>0?1:-1)*(6+Math.random()*4);
       w.fleeY=w.y+(dy>0?1:-1)*(6+Math.random()*4);
     }
+    // Wolf proximity → flee (wolves scare wildlife)
+    if(!w.fleeing){for(let wi=0;wi<wolves.length;wi++){const wl=wolves[wi];const wdx=w.x-wl.x,wdy=w.y-wl.y,wdi=Math.sqrt(wdx*wdx+wdy*wdy);if(wdi<8){w.fleeing=true;w.fleeT=3+Math.random()*2;w.fleeX=w.x+(wdx>0?1:-1)*(8+Math.random()*4);w.fleeY=w.y+(wdy>0?1:-1)*(8+Math.random()*4);break}}}
     if(w.fleeing){
       w.fleeT-=d;
       const fdx=w.fleeX-w.x,fdy=w.fleeY-w.y,fdi=Math.sqrt(fdx*fdx+fdy*fdy);
@@ -3441,6 +3500,134 @@ function dWildlife_single(w){
       // Eye
       X.fillStyle='#111';px(X,sx+bd[0]*2*SC,sy-3*SC,'#111');
     }
+}
+
+// ============ WOLF PACK SYSTEM (nocturnal) ============
+function spawnWolves(){
+  const ds=getDayState(),nm=ds.nightMul||0;
+  // Only spawn at night
+  if(nm<TUNING.wolfNightThreshold)return;
+  // Cooldown
+  if(gt<_wolfSpawnT)return;
+  // Count active packs
+  const packIds=new Set(wolves.map(w=>w.packId));
+  if(packIds.size>=TUNING.wolfMaxPacks)return;
+  // Find a spawn point in forested area, 12-20 tiles from player
+  for(let attempt=0;attempt<5;attempt++){
+    const angle=Math.random()*Math.PI*2;
+    const dist=12+Math.random()*8;
+    const sx=Math.floor(P.x+Math.cos(angle)*dist);
+    const sy=Math.floor(P.y+Math.sin(angle)*dist);
+    if(sx<2||sy<2||sx>=MW-2||sy>=MH-15)continue;
+    if((corr[sy]?.[sx]||0)>.5)continue; // avoid heavily corrupted zones
+    const tile=map[sy]?.[sx];
+    if(tile!==TT.G&&!isT(tile))continue;
+    // Spawn pack
+    const pid=Date.now()+Math.random();
+    const packSize=TUNING.wolfPackSize[0]+Math.floor(Math.random()*(TUNING.wolfPackSize[1]-TUNING.wolfPackSize[0]+1));
+    for(let i=0;i<packSize;i++){
+      const ox=(Math.random()-.5)*3,oy=(Math.random()-.5)*3;
+      wolves.push({
+        x:sx+ox,y:sy+oy,
+        hp:TUNING.wolfHp,mhp:TUNING.wolfHp,
+        spd:TUNING.wolfSpeed+Math.random()*.2,
+        dmg:TUNING.wolfDmg,
+        ht:0,ar:TUNING.wolfAggroRadius,
+        fr:Math.random()*4,wb:Math.random()*6,
+        mt:Math.random()*1.5,
+        packId:pid,packX:sx,packY:sy,
+        howlT:0
+      });
+    }
+    _wolfSpawnT=gt+TUNING.wolfSpawnCooldown;
+    // Howl notification if nearby
+    if(dist<18){
+      ft2(P.x,P.y-1.5,'🐺 Hurlement dans la nuit...','#b0b0c0');
+    }
+    break;
+  }
+}
+function updWolves(d){
+  const ds=getDayState(),nm=ds.nightMul||0;
+  spawnWolves();
+  for(let i=wolves.length-1;i>=0;i--){
+    const w=wolves[i];
+    w.ht=Math.max(0,w.ht-d);w.fr+=d*4;w.wb+=d*3;
+    // Dawn: flee and despawn
+    if(nm<TUNING.wolfDawnFleeThreshold){
+      // Run away from player
+      const dx=w.x-P.x,dy=w.y-P.y,di=Math.sqrt(dx*dx+dy*dy);
+      if(di>0){w.x+=(dx/di)*w.spd*2*d;w.y+=(dy/di)*w.spd*2*d}
+      if(di>30||w.x<1||w.y<1||w.x>=MW-1||w.y>=MH-1){wolves.splice(i,1)}
+      continue;
+    }
+    const dx=P.x-w.x,dy=P.y-w.y,di=Math.sqrt(dx*dx+dy*dy);
+    // Despawn if very far
+    if(di>40){wolves.splice(i,1);continue}
+    // Pack cohesion: find pack center
+    const pack=wolves.filter(o=>o.packId===w.packId);
+    let pcx=0,pcy=0;pack.forEach(p=>{pcx+=p.x;pcy+=p.y});
+    pcx/=pack.length;pcy/=pack.length;
+    // Movement
+    w.mt-=d;
+    if(di<w.ar&&w.mt<=0){
+      // Chase player
+      let mx=dx/di*w.spd*d,my=dy/di*w.spd*d;
+      // Pack cohesion pull (gentle)
+      const cdx=pcx-w.x,cdy=pcy-w.y,cdi=Math.sqrt(cdx*cdx+cdy*cdy);
+      if(cdi>TUNING.wolfPackRadius){mx+=cdx/cdi*.3*d;my+=cdy/cdi*.3*d}
+      const tx2=Math.floor(w.x+mx),ty2=Math.floor(w.y+my);
+      if(tx2>=0&&ty2>=0&&tx2<MW&&ty2<MH&&!isS(map[ty2][tx2])){w.x+=mx;w.y+=my}
+    }else if(w.mt<=0){
+      // Wander near pack center
+      w.mt=1+Math.random()*2;
+      const wa=Math.random()*Math.PI*2;
+      const tgt_x=pcx+Math.cos(wa)*TUNING.wolfPackRadius;
+      const tgt_y=pcy+Math.sin(wa)*TUNING.wolfPackRadius;
+      w.packX=tgt_x;w.packY=tgt_y;
+    }else if(di>=w.ar){
+      // Drift toward wander target
+      const wdx=w.packX-w.x,wdy=w.packY-w.y,wdi=Math.sqrt(wdx*wdx+wdy*wdy);
+      if(wdi>.5){
+        const mx=wdx/wdi*w.spd*.4*d,my=wdy/wdi*w.spd*.4*d;
+        const tx2=Math.floor(w.x+mx),ty2=Math.floor(w.y+my);
+        if(tx2>=0&&ty2>=0&&tx2<MW&&ty2<MH&&!isS(map[ty2][tx2])){w.x+=mx;w.y+=my}
+      }
+    }
+    // Damage player on contact
+    if(di<.8&&P.iv<=0){
+      P.hp-=w.dmg;P.iv=.8;P.ht=.3;shake=.4;sp(P.x,P.y,'#8888aa',6);
+      if(P.hp<=0){dead=true;document.getElementById('dth').style.display='block'}
+    }
+    // Death
+    if(w.hp<=0){
+      sp(w.x,w.y,'#6a6a72',10);
+      if(Math.random()<.25&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(w.x,w.y,'💧+1','#b266ff')}
+      wolves.splice(i,1);
+    }
+  }
+}
+function dWolves_single(w){
+  const sx=(w.x-smCam.x)*T*SC,sy=(w.y-smCam.y)*T*SC;
+  if(sx<-80*SC||sy<-80*SC||sx>CV.width+80*SC||sy>CV.height+80*SC)return;
+  // Shadow
+  X.fillStyle='rgba(0,0,0,.12)';X.beginPath();X.ellipse(sx,sy+8*SC,12*SC,4*SC,0,0,Math.PI*2);X.fill();
+  const fr=Math.floor(w.fr)%2,spr=_s['wf'+fr];if(!spr)return;
+  if(w.ht>0)X.globalAlpha=.5;
+  const hd=spr._hd||1;
+  // Face direction based on movement toward player
+  const facing=P.x<w.x?-1:1;
+  X.save();
+  X.translate(sx,sy);
+  if(facing<0)X.scale(-1,1);
+  X.drawImage(spr,0,0,spr.width,spr.height,-spr.width/hd*SC/2,-spr.height/hd*SC/2,spr.width/hd*SC,spr.height/hd*SC);
+  X.restore();
+  X.globalAlpha=1;
+  // HP bar
+  if(w.hp<w.mhp){const bw=14*SC,sh2=spr.height/hd*SC;X.fillStyle='#0a0a0a';X.fillRect(sx-bw/2-1,sy-sh2/2-6*SC-1,bw+2,4*SC+2);X.fillStyle='#5a0000';X.fillRect(sx-bw/2,sy-sh2/2-6*SC,bw,4*SC);X.fillStyle='#e8aa30';X.fillRect(sx-bw/2,sy-sh2/2-6*SC,bw*(w.hp/w.mhp),4*SC)}
+  // Eye glow at night
+  const nds=getDayState(),nmw=nds.nightMul||0;
+  if(nmw>.2){X.globalAlpha=nmw*.7;X.fillStyle='rgba(255,220,0,'+(nmw*.9)+')';const eyeR=(5+nmw*5)*SC;const sh2=spr.height/hd*SC;X.beginPath();X.arc(sx-3*SC*facing,sy-sh2/4,eyeR,0,Math.PI*2);X.fill();X.beginPath();X.arc(sx+3*SC*facing,sy-sh2/4,eyeR,0,Math.PI*2);X.fill();X.globalAlpha=1}
 }
 
 const _th={};
@@ -3559,6 +3746,7 @@ function updP2(d){
     const dirs=[[0,-1],[1,0],[0,1],[-1,0]],dd=dirs[P.f];
     const tx=Math.floor(P.x+dd[0]),ty=Math.floor(P.y+dd[1]);
     ents.forEach(e=>{const ex=e.x-(P.x+dd[0]*.5),ey=e.y-(P.y+dd[1]*.5);if(Math.sqrt(ex*ex+ey*ey)<1.5){e.hp-=P.pow;e.ht=.2;shake=.15;sp(e.x,e.y,'#ff6b6b',5)}});
+    wolves.forEach(w=>{const wx2=w.x-(P.x+dd[0]*.5),wy2=w.y-(P.y+dd[1]*.5);if(Math.sqrt(wx2*wx2+wy2*wy2)<1.5){w.hp-=P.pow;w.ht=.2;shake=.15;sp(w.x,w.y,'#aaaacc',5)}});
     // Lateral boss hit detection
     if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100}}}
     if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100}}}
@@ -3942,7 +4130,7 @@ function updShop(){
     co.appendChild(d2);
   });
 }
-function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);wildlife=[];document.getElementById('dth').style.display='none'}
+function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);wildlife=[];wolves=[];document.getElementById('dth').style.display='none'}
 
 // ============ RENDERING ============
 function dSp(k,wx,wy,ox=0,oy=0,a=1){const s=_s[k];if(!s)return;if(a<1)X.globalAlpha=a;const hd=s._hd||1;const dw=s.width/hd*SC,dh=s.height/hd*SC;X.drawImage(s,0,0,s.width,s.height,(wx-smCam.x)*T*SC+ox*SC,(wy-smCam.y)*T*SC+oy*SC,dw,dh);if(a<1)X.globalAlpha=1}
@@ -4302,6 +4490,15 @@ function dLighting(){
         LX.fillStyle=gr;LX.fillRect(0,0,LCV.width,LCV.height);
       }
     });
+    // Wolf eye glow at night (amber)
+    wolves.forEach(w=>{
+      const wx=(w.x-smCam.x)*T*SC,wy=(w.y-smCam.y)*T*SC;
+      if(wx>-30*SC&&wy>-30*SC&&wx<LCV.width+30*SC&&wy<LCV.height+30*SC){
+        const gr=LX.createRadialGradient(wx,wy-4*SC,0,wx,wy-4*SC,10*SC);
+        gr.addColorStop(0,'rgba(255,220,0,'+(nightMul*.15)+')');gr.addColorStop(1,'rgba(255,220,0,0)');
+        LX.fillStyle=gr;LX.fillRect(0,0,LCV.width,LCV.height);
+      }
+    });
   }
 
   LX.globalCompositeOperation='source-over';
@@ -4410,6 +4607,8 @@ function dMM(){
     else if(cr>.3)c=`rgb(${Math.floor(35+cr*20)},${Math.floor(45-cr*25)},${Math.floor(35+cr*25)})`;
     mx.fillStyle=c;mx.fillRect(Math.floor(x*128/MW),Math.floor(y*112/MH),Math.max(1,Math.ceil(128/MW)),Math.max(1,Math.ceil(112/MH)));
   }
+  // Draw wolves on minimap as amber dots
+  mx.fillStyle='#ccaa00';wolves.forEach(w=>{mx.fillRect(Math.floor(w.x*128/MW),Math.floor(w.y*112/MH),2,2)});
   mx.fillStyle='#ffd700';mx.fillRect(Math.floor(P.x*128/MW)-1,Math.floor(P.y*112/MH)-1,3,3);
   mx.strokeStyle='rgba(255,255,255,.25)';mx.lineWidth=1;
   mx.strokeRect(Math.floor(smCam.x*128/MW),Math.floor(smCam.y*112/MH),Math.floor(VW*128/MW),Math.floor(VH*112/MH));
@@ -4494,6 +4693,7 @@ function dUI(){
   if(guardian&&!guardian.defeated) extra+=` \u2694\ufe0f GARDIEN`;
   if(bossEast&&!bossEast.defeated) extra+=` \ud83e\udea4 PIEUVRE`;
   if(bossWest&&!bossWest.defeated) extra+=` \ud83d\udc3b OURS`;
+  if(wolves.length>0) extra+=` · <span style="color:#ccaa00">\ud83d\udc3a ${wolves.length}</span>`;
   if(P._encens&&gt<P._encens) extra+=` · 🌀${Math.ceil(P._encens-gt)}s`;
   document.getElementById('st').innerHTML=`❤️ <span class="br"><span class="bf" style="width:${hp}%;background:${hc}"></span></span> ${P.hp}/${P.mhp}<br>⚡ <span class="br"><span class="bf" style="width:${st}%;background:#3d85c6"></span></span><br>📦 <span class="br"><span class="bf" style="width:${invPct}%;background:${invCol}"></span></span> ${used}/${cap}<br>${extra}`;
   let invLine=`🪵 ${P.w} (${P.wv||0} 💰) · 💧 ${P.sap} · 💰 ${P.g}`;
@@ -5235,7 +5435,7 @@ function loop(ts){
       spawnGuardian(pp.x,pp.y);
     }
   }
-  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updE(d);spawnE();updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
+  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);checkLateralBosses();shake=Math.max(0,shake-d*4)}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
 
@@ -5257,9 +5457,10 @@ function loop(ts){
   for(let y=-8;y<=VH+8;y++)for(let x=-5;x<=VW+5;x++){const wx=stX+x,wy=stY+y;if(wx>=0&&wy>=0&&wx<MW&&wy<MH){const t=map[wy][wx];if(t!==TT.G&&t!==TT.PA&&t!==TT.VL&&t!==TT.WA)dl.push({tp:'t',x:wx,y:wy,sy:wy})}}
   dl.push({tp:'p',x:P.x,y:P.y,sy:P.y});
   ents.forEach(e=>dl.push({tp:'e',e,x:e.x,y:e.y,sy:e.y}));
+  wolves.forEach(w=>dl.push({tp:'wlf',w,x:w.x,y:w.y,sy:w.y}));
   wildlife.forEach(w=>dl.push({tp:'w',w,x:w.x,y:w.y,sy:w.y}));
   dl.sort((a,b)=>a.sy-b.sy);
-  dl.forEach(item=>{if(item.tp==='t')dObj(item.x,item.y);else if(item.tp==='p')dPlayer();else if(item.tp==='w')dWildlife_single(item.w)});
+  dl.forEach(item=>{if(item.tp==='t')dObj(item.x,item.y);else if(item.tp==='p')dPlayer();else if(item.tp==='wlf')dWolves_single(item.w);else if(item.tp==='w')dWildlife_single(item.w)});
   dFigurants();dEnts();dParts2();dInteractPrompts();
   X.restore();
 
