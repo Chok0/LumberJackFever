@@ -71,13 +71,13 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <script>
 // ============ TUNING SYSTEM ============
 const TUNING = {
-  // -- Corruption (aggressive: visible <1min, dangerous at 5min) --
-  corrMinCluster: 3,
-  corrSpreadRate: 0.018,     // very fast spread
-  corrSpreadRadius: 4,
-  corrPassiveGrowth: 0.000003,
-  corrDensityRadius: 3,
-  corrDensityThreshold: 0.08,
+  // -- Corruption (gradual: visible ~3min, dangerous ~10min) --
+  corrMinCluster: 5,             // need 5 adjacent stumps (was 3)
+  corrSpreadRate: 0.004,         // slow spread (was 0.018)
+  corrSpreadRadius: 3,           // tighter radius (was 4)
+  corrPassiveGrowth: 0.0000008,  // slower passive growth (was 0.000003)
+  corrDensityRadius: 5,          // larger check area — sparse cutting forgiven (was 3)
+  corrDensityThreshold: 0.15,    // need 15% stumps in area to trigger (was 0.08)
   // -- Player --
   playerBaseHp: 5,
   playerBaseStamina: 100,
@@ -148,9 +148,9 @@ const TUNING = {
 const TUNING_DEFAULT = JSON.parse(JSON.stringify(TUNING));
 const TUNING_META = {
   'corrMinCluster': {min:2,max:12,step:1,cat:'Corruption',label:'Seuil cluster (stumps)'},
-  'corrSpreadRate': {min:0.0005,max:0.01,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
-  'corrSpreadRadius': {min:1,max:5,step:0.5,cat:'Corruption',label:'Rayon propagation'},
-  'corrPassiveGrowth': {min:0,max:0.000002,step:0.0000001,cat:'Corruption',label:'Croissance passive'},
+  'corrSpreadRate': {min:0.0005,max:0.02,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
+  'corrSpreadRadius': {min:1,max:6,step:0.5,cat:'Corruption',label:'Rayon propagation'},
+  'corrPassiveGrowth': {min:0,max:0.000005,step:0.0000001,cat:'Corruption',label:'Croissance passive'},
   'corrDensityRadius': {min:2,max:8,step:1,cat:'Corruption',label:'Rayon densité check'},
   'corrDensityThreshold': {min:0.05,max:0.5,step:0.01,cat:'Corruption',label:'Seuil densité (ratio)'},
   'playerBaseHp': {min:1,max:20,step:1,cat:'Joueur',label:'PV de base'},
