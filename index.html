@@ -57,8 +57,17 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <div id="ui"><div class="pn" id="st"></div><div class="pn" id="inv"></div></div>
 <div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · TAB: éditeur</div>
 <div id="shp"><div id="dlg"><div id="dlg-box"><canvas id="dlg-portrait" width="80" height="80"></canvas><div id="dlg-right"><div id="dlg-name"></div><div id="dlg-text"></div></div></div><button id="dlg-next" onclick="advanceDialogue()">...</button></div><h2>🏠 Village</h2><div id="si2"></div><p style="margin-top:6px;font-size:8px;color:#52b788;text-align:center">E / Échap: fermer</p></div>
-<div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button></div>
-<div id="intro-cin" style="position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:100;display:flex;flex-direction:column;justify-content:center;align-items:center;cursor:pointer">
+<div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button><button class="sb" style="margin-top:4px;background:#3a1010;border-color:#8b0000" onclick="newGame()">Nouvelle partie</button></div>
+<div id="title-screen" style="position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(180deg,#060a0e 0%,#0a1a10 50%,#060a0e 100%);z-index:150;display:flex;flex-direction:column;justify-content:center;align-items:center">
+  <h1 style="color:#52b788;font-family:serif;font-size:32px;letter-spacing:3px;text-shadow:0 0 30px #2d6a4f,0 0 60px #1b4332;margin-bottom:4px">LUMBERJACK FEVER</h1>
+  <p style="color:#40916c;font-family:monospace;font-size:10px;margin-bottom:40px;letter-spacing:2px">Proto v13</p>
+  <div style="display:flex;flex-direction:column;gap:10px;align-items:center">
+    <button class="sb" style="padding:8px 28px;font-size:13px;min-width:180px" onclick="startNewGame()">Nouvelle Partie</button>
+    <button class="sb" id="btn-continue" style="padding:8px 28px;font-size:13px;min-width:180px;display:none" onclick="continueGame()">Continuer</button>
+  </div>
+  <p style="color:#2d6a4f;font-family:monospace;font-size:8px;margin-top:60px;text-align:center;max-width:300px;line-height:1.5">ZQSD: déplacer · Espace: couper · E: interagir<br>C: dash · R: rituel · P: planter · I: inventaire</p>
+</div>
+<div id="intro-cin" style="position:absolute;top:0;left:0;width:100%;height:100%;background:#000;z-index:100;display:none;flex-direction:column;justify-content:center;align-items:center;cursor:pointer">
   <canvas id="intro-canvas" width="480" height="270" style="image-rendering:pixelated;width:480px;height:270px"></canvas>
   <div id="intro-text" style="color:#b7e4c7;font-family:monospace;font-size:13px;max-width:440px;text-align:center;margin-top:16px;line-height:1.6;min-height:80px"></div>
   <div id="intro-skip" style="color:#52b788;font-family:monospace;font-size:9px;margin-top:20px;opacity:.5">Cliquer ou appuyer Espace pour passer</div>
@@ -5354,6 +5363,108 @@ function updShop(){
 }
 function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);P.seeds=0;P.essences=Math.floor((P.essences||0)/2);wildlife=[];wolves=[];sacredMiniBosses=[];document.getElementById('dth').style.display='none'}
 
+// ============ SAVE / LOAD SYSTEM ============
+const SAVE_KEY='lumberjack_fever_save';
+const SAVE_VER=1;
+let _saveTimer=0;
+
+function saveGame(){
+  try{
+    // Sparse encode 2D array (only non-zero values)
+    function sparse2D(arr,rows,cols){
+      const e=[];
+      for(let y=0;y<rows;y++){if(!arr[y])continue;for(let x=0;x<cols;x++){if(arr[y][x])e.push(x,y,Math.round(arr[y][x]*1000)/1000)}}
+      return e;
+    }
+    const data={
+      v:SAVE_VER,
+      P:JSON.parse(JSON.stringify(P)),
+      gt,dayPhase,cuts,dead,
+      _wolfPacks,_wolfSpawnT,
+      // Map: flatten to 1D
+      mapFlat:[].concat(...map),
+      corrSp:sparse2D(corr,MH,MW),
+      corrTSp:sparse2D(corrT,MH,MW),
+      _corrSources:JSON.parse(JSON.stringify(_corrSources)),
+      regrowMap:JSON.parse(JSON.stringify(regrowMap)),
+      pos:{
+        _primPos:window._primPos,_bossEast:window._bossEast,_bossWest:window._bossWest,
+        _brokenAxePos:window._brokenAxePos,_cabinAbandPos:window._cabinAbandPos,
+        _hermitPos:window._hermitPos,_rivers:window._rivers
+      },
+      endingActive
+    };
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+    return true;
+  }catch(e){console.warn('Save failed:',e);return false}
+}
+
+function loadGame(){
+  try{
+    const raw=localStorage.getItem(SAVE_KEY);
+    if(!raw)return false;
+    const data=JSON.parse(raw);
+    if(data.v!==SAVE_VER)return false;
+    // Restore player
+    Object.assign(P,data.P);
+    // Restore globals
+    gt=data.gt;dayPhase=data.dayPhase;cuts=data.cuts;dead=data.dead||false;
+    _wolfPacks=data._wolfPacks||0;_wolfSpawnT=data._wolfSpawnT||0;
+    // Restore map from flat
+    if(data.mapFlat&&data.mapFlat.length===MW*MH){
+      for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)map[y][x]=data.mapFlat[y*MW+x];
+    }
+    // Restore corruption (sparse)
+    corr=Array.from({length:MH},()=>Array(MW).fill(0));
+    corrT=Array.from({length:MH},()=>Array(MW).fill(0));
+    if(data.corrSp){for(let i=0;i<data.corrSp.length;i+=3){const x=data.corrSp[i],y=data.corrSp[i+1],v=data.corrSp[i+2];if(y<MH&&x<MW)corr[y][x]=v}}
+    if(data.corrTSp){for(let i=0;i<data.corrTSp.length;i+=3){const x=data.corrTSp[i],y=data.corrTSp[i+1],v=data.corrTSp[i+2];if(y<MH&&x<MW)corrT[y][x]=v}}
+    // Restore corrSrc from _corrSources
+    corrSrc=Array.from({length:MH},()=>Array(MW).fill(false));
+    _corrSources=data._corrSources||[];
+    _corrSources.forEach(([x,y])=>{if(y<MH&&x<MW)corrSrc[y][x]=true});
+    // Restore other
+    regrowMap=data.regrowMap||[];
+    if(data.pos){
+      window._primPos=data.pos._primPos;window._bossEast=data.pos._bossEast;window._bossWest=data.pos._bossWest;
+      window._brokenAxePos=data.pos._brokenAxePos;window._cabinAbandPos=data.pos._cabinAbandPos;
+      window._hermitPos=data.pos._hermitPos;window._rivers=data.pos._rivers;
+    }
+    endingActive=data.endingActive||false;
+    // Reset dynamic entities
+    ents=[];wolves=[];wildlife=[];sacredMiniBosses=[];parts=[];fts=[];
+    // Re-spawn guardian if it was awake but not defeated
+    if(P._guardianAwake&&!P._guardianDefeated){
+      const pp=window._primPos||{x:64,y:10};
+      setTimeout(()=>spawnGuardian(pp.x,pp.y),1000);
+    }
+    // Camera
+    smCam.x=P.x-VW/2;smCam.y=P.y-VH/2;
+    return true;
+  }catch(e){console.warn('Load failed:',e);return false}
+}
+
+function hasSave(){return !!localStorage.getItem(SAVE_KEY)}
+function deleteSave(){localStorage.removeItem(SAVE_KEY)}
+function newGame(){deleteSave();location.reload()}
+
+// ============ TUTORIAL / OBJECTIVES ============
+let _objShown='';
+function getCurrentObjective(){
+  if(introActive||endingActive||dead)return null;
+  if(gt<5)return null;
+  if(P._contractsDone===0&&P.w===0&&P.g===0)return 'Explore le village. Parle aux habitants (E).';
+  if(P._contractsDone===0&&P.w>0&&P.g<10)return 'Vends ton bois : Taverne ou Emissaire (E).';
+  if(P._contractsDone===0&&P.g>=10)return "L'Emissaire propose des contrats lucratifs.";
+  if(P._contractsDone>=1&&P._contractsDone<3&&!P._firstCorruption)return 'Remplis des contrats. Explore vers le nord.';
+  if(P._firstCorruption&&P._ritualsPerformed===0&&P.essences===0)return 'La corruption se repand. Tue des ombres pour des essences.';
+  if(P._firstCorruption&&P.essences>=2&&P._ritualsPerformed===0)return 'Purifie les souches corrompues (R pres d\'une souche).';
+  if(P._gmHealth<60&&P._gmAlive&&P._doctorArrived)return 'Grand-mere faiblit ! Achete des remedes au Docteur.';
+  if(P._brokenAxeFound&&!P._hasLegendaryAxe)return 'Apporte la hache brisee au Forgeron.';
+  if(!P._estelleMet&&P._deepestBiome>=1)return 'Cherche les ermites dans la foret profonde.';
+  return null;
+}
+
 // ============ RENDERING ============
 function dSp(k,wx,wy,ox=0,oy=0,a=1){const s=_s[k];if(!s)return;if(a<1)X.globalAlpha=a;const hd=s._hd||1;const dw=s.width/hd*SC,dh=s.height/hd*SC;X.drawImage(s,0,0,s.width,s.height,(wx-smCam.x)*T*SC+ox*SC,(wy-smCam.y)*T*SC+oy*SC,dw,dh);if(a<1)X.globalAlpha=1}
 
@@ -6186,7 +6297,8 @@ function dUI(){
   }
   document.getElementById('inv').innerHTML=invLine;
   const ds=getDayState();
-  document.getElementById('time-ind').textContent=ds.name;
+  const obj=getCurrentObjective();
+  document.getElementById('time-ind').innerHTML=ds.name+(obj?'<br><span style="color:#e9c46a;font-size:8px">'+obj+'</span>':'');
 }
 
 
@@ -6760,7 +6872,7 @@ function checkPurification(){
   }
   P._purificationPct=Math.round((1-corrupted/Math.max(1,total))*100);
   // Check for purify ending ("Réparateur")
-  if(P._purificationPct>=95 && P._saplings>=15 && P._ritualsPerformed>=3 && P._guardianDefeated && (P._zonesRestored||0)>=5){
+  if(P._purificationPct>=75 && P._saplings>=8 && P._ritualsPerformed>=2 && P._guardianDefeated && (P._zonesRestored||0)>=3){
     P._ending='purify';
     triggerEnding('purify');
   }
@@ -6923,7 +7035,7 @@ function updVilUnrest(d){
   // Also check river tiles to detect first river sighting
   if(!P._riverSeen){
     const px2=Math.floor(P.x),py2=Math.floor(P.y);
-    for(let dy=-VH;dy<=VH;dy++)for(let dx=-VW;dx<=VW;dx++){
+    for(let dy=-5;dy<=5;dy++)for(let dx=-5;dx<=5;dx++){
       const nx=px2+dx,ny=py2+dy;
       if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny][nx]===TT.RIVER){
         P._riverSeen=true;
@@ -7200,10 +7312,9 @@ function advanceEnding(){
   }else{
     endPhase++;endTimer=0;endCharIdx=0;endTypeTimer=0;
     if(endPhase>=scenes.length){
-      // Game over
-      const ov=document.getElementById('ending-overlay');
-      ov.style.transition='opacity 2s';ov.style.opacity='0';
-      setTimeout(()=>{ov.style.display='none';endingActive=false},2000);
+      // Game over — show restart button
+      document.getElementById('end-text').innerHTML='';
+      document.getElementById('end-skip').innerHTML='<button class="sb" style="padding:8px 24px;font-size:14px;margin-top:20px" onclick="newGame()">Nouvelle Partie</button>';
       return;
     }
     drawEndScene(type,endPhase);
@@ -7286,6 +7397,9 @@ let lt=0,mmT=0;
 function loop(ts){
   const d=Math.min(.05,(ts-lt)/1000);lt=ts;
   
+  // Title screen — pause everything
+  const ts2=document.getElementById('title-screen');
+  if(ts2&&ts2.style.display!=='none'){requestAnimationFrame(loop);return}
   // Intro cinematic
   if(introActive){updateIntro(d);requestAnimationFrame(loop);return;}
   
@@ -7307,6 +7421,8 @@ function loop(ts){
     }
   }
   if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);shake=Math.max(0,shake-d*4)}
+  // Auto-save every 60 seconds
+  _saveTimer+=d;if(_saveTimer>60&&!dead&&!endingActive){_saveTimer=0;saveGame()}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
 
@@ -7342,8 +7458,27 @@ function loop(ts){
 
 initSprites();genMap();initFigurants();smCam.x=P.x-VW/2;smCam.y=P.y-VH/2;
 
+// Show continue button if save exists
+if(hasSave()){const btn=document.getElementById('btn-continue');if(btn)btn.style.display='block'}
+
+function startNewGame(){
+  deleteSave();
+  document.getElementById('title-screen').style.display='none';
+  const ic=document.getElementById('intro-cin');
+  ic.style.display='flex';
+  introActive=true;
+}
+function continueGame(){
+  document.getElementById('title-screen').style.display='none';
+  document.getElementById('intro-cin').style.display='none';
+  introActive=false;
+  P._introSeen=true;
+  loadGame();
+  initFigurants();
+}
+
 // ============ INTRO CINEMATIC ============
-let introActive=true;
+let introActive=false; // starts false, title screen shows first
 let introPhase=0, introTimer=0, introTextIdx=0, introCharIdx2=0, introTypeTimer=0;
 const INTRO_SCENES=[
   {text:"Un village au pied de la forêt. Paisible. Isolé.", dur:5.5},
