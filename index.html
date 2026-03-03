@@ -90,7 +90,7 @@ const TUNING = {
   // -- Axe Durability --
   axeBaseDur: 50,           // base durability (hits)
   axeDurPerLevel: 25,       // +dur per axe level
-  axeRepairCost: 15,        // gold to repair
+  axeRepairCost: 5,         // gold to repair (was 15)
   // -- Economy --
   baseBagSize: 30,
   bagUpgradeAmount: 15,
@@ -334,7 +334,8 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   chestWood:0,chestSap:0, // stored in house chest
   woodByType:{}, // track wood per essence: {tileType: count}
   _contract:null, // {type,name,amount,pricePerUnit,deadline,acceptedAt}
-  _contractCooldown:0, // time until next contract available
+  _contractCooldown:0, // (legacy, unused)
+  _contractsDone:0, // contracts completed — drives progression
   _sacredLore:[], // IDs of lore fragments already read
   _introSeen:false, // has seen intro cinematic
   _grandparentTalked:0, // times talked to grandparent
@@ -2597,9 +2598,9 @@ function getDialogue(npcType){
     const hasRare=Object.keys(rareCount).some(k=>{
       const ess2=ESS[parseInt(k)];return ess2&&ess2.rare});
     if(v===0){
-      lines.push("Bonjour ! Estelle, luthier. J'ai install\u00e9 mon atelier ici.");
+      lines.push("Oh ! Un visiteur... Estelle, luthier. Je me suis install\u00e9e ici, loin du bruit.");
       lines.push("Je fabrique des instruments de musique \u2014 violons, guitares, luths...");
-      lines.push("Mais j'ai besoin de bois sp\u00e9ciaux. Des bois rares, avec une \u00e2me.");
+      lines.push("La for\u00eat me donne tout ce qu'il faut. Mais j'ai besoin de bois sp\u00e9ciaux, rares.");
       lines.push("\u00c9b\u00e8ne, Palissandre, Bois de Rose dans le mar\u00e9cage \u00e0 l'est...");
       lines.push("\u00c9pic\u00e9a de r\u00e9sonance dans les for\u00eats bor\u00e9ales \u00e0 l'ouest...");
       lines.push("Et le mythique \u00c9rable ond\u00e9, cach\u00e9 dans la for\u00eat mixte.");
@@ -3026,9 +3027,16 @@ function genMap(){
   map[bossWY][bossWX]=TT.RK;
   window._bossWest={x:bossWX,y:bossWY};
 
-  // === Luthier in village ===
-  const luthX=CX-8, luthY=MH-12+7;
-  if(luthY<MH&&luthX>0) map[luthY][luthX]=TT.LUTH;
+  // === Luthier: hidden in a lisière clearing (ermite) ===
+  const luthX=Math.floor(20+n2(70,50,seed+970)*88);
+  const luthY=Math.floor(B_MIX+6+n2(70,51,seed+971)*(VIL_Y-B_MIX-18));
+  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+    const nx=luthX+dx,ny=luthY+dy;
+    if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
+      if(dx===0&&dy===0) map[ny][nx]=TT.LUTH;
+      else map[ny][nx]=TT.G;
+    }
+  }
 
     // === HERMIT HUTS: One per deep biome ===
   const hermitPositions = [];
@@ -3711,19 +3719,15 @@ function updP2(d){
         shake=.15;sp(tx+.5,ty+.5,'#aaa',3);
         return; // bounce — can't even damage it
       }
-      // Axe durability check
-      if(P._axeDur<=0){
-        ft2(P.x,P.y-.5,'🪓 Hache émoussée !','#e74c3c');
-        ft2(P.x,P.y-1,'Réparer chez le Forgeron','#e9c46a');
-        shake=.1;
-        return;
-      }
-      P._axeDur=Math.max(0,P._axeDur-1); // consume durability
+      // Axe durability — dull axe does half damage, doesn't block
+      const isDull=P._axeDur<=0;
+      if(!isDull) P._axeDur=Math.max(0,P._axeDur-1);
+      if(isDull&&Math.random()<.15) ft2(P.x,P.y-.5,'🪓 Émoussée...','#e9c46a');
       if(P._axeDur<=Math.floor(P._axeMaxDur*0.2)&&P._axeDur>0&&P._axeDur%5===0){
         ft2(P.x,P.y-1,'⚠️ Hache fragile !','#e9c46a');
       }
       const need=ess.hp;
-      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=P.pow;
+      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/2)):P.pow;
       sp(tx+.5,ty+.5,'#8B6914',4);shake=.07;
       // Show name on first hit
       if(_th[hk]===P.pow)ft2(tx+.5,ty-.5,ess.name,'#b7e4c7');
@@ -3774,35 +3778,56 @@ const CONTRACT_ZONES={
   [TT.PET]:'la forêt primordiale — bois pétrifié rare',
 };
 function generateContract(){
-  // Progressive: many tiers, tutorial first contract, scaling rewards
-  let pool, timeBonus=0, amountMod=0;
-  if(cuts===0){
-    // TUTORIAL contract: first time, easy and guided
-    pool=[TT.NOI]; amountMod=-1; timeBonus=60;
-  }else if(cuts < 5) {pool=[TT.NOI,TT.NOI,TT.AUL]; amountMod=-1; timeBonus=30;}
-  else if(cuts < 12) pool=[TT.NOI,TT.AUL,TT.BOU]; // still lisière easy
-  else if(cuts < 25) pool=[TT.AUL,TT.BOU,TT.BOU,TT.ERA]; // push into lisière
-  else if(cuts < 40) pool=[TT.BOU,TT.ERA,TT.ERA,TT.AUL]; // deeper lisière
-  else if(cuts < 60) pool=[TT.ERA,TT.PIN,TT.BOU,TT.FRE]; // transition
-  else if(cuts < 85) pool=[TT.PIN,TT.FRE,TT.CHE,TT.HET]; // forêt mixte
-  else if(cuts < 110) pool=[TT.CHE,TT.HET,TT.IFS,TT.TIL,TT.FRE]; // ancienne transition
-  else if(cuts < 150) pool=[TT.IFS,TT.TIL,TT.CHE,TT.HET]; // forêt ancienne
-  else pool=[TT.IFS,TT.TIL,TT.SEQ,TT.PET,TT.HET]; // primordiale
-  const type=pool[Math.floor(Math.random()*pool.length)];
+  // Progression by contracts completed — volumes force upgrades, types push deeper
+  const ci=P._contractsDone||0;
+  let type, amount, timeBonus=0;
+  // === PHASE 1: Noisetier — learn, then grind (bag 30 → 45) ===
+  if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial
+  }else if(ci===1){ type=TT.NOI; amount=8;
+  }else if(ci===2){ type=TT.NOI; amount=15;
+  }else if(ci===3){ type=TT.NOI; amount=20; // fills base bag (30)
+  }else if(ci===4){ type=TT.AUL; amount=12; // variety
+  }else if(ci===5){ type=TT.NOI; amount=40; // forces bag upgrade 30→45
+  // === PHASE 2: Bouleau — clear-cutting begins, corruption ===
+  }else if(ci===6){ type=TT.BOU; amount=15;
+  }else if(ci===7){ type=TT.BOU; amount=25;
+  }else if(ci===8){ type=TT.BOU; amount=40; // forces bag upgrade 45→60
+  }else if(ci===9){ type=TT.AUL; amount=30; // breathing room
+  // === PHASE 3: Érable — push deeper into lisière ===
+  }else if(ci===10){ type=TT.ERA; amount=12;
+  }else if(ci===11){ type=TT.ERA; amount=20;
+  }else if(ci===12){ type=TT.ERA; amount=35;
+  // === PHASE 4: Pin/Frêne — transition, push toward mixte ===
+  }else if(ci===13){ type=TT.PIN; amount=10;
+  }else if(ci===14){ type=TT.FRE; amount=15;
+  }else if(ci===15){ type=TT.PIN; amount=25;
+  // === PHASE 5: Chêne/Hêtre — forêt mixte (needs axe 2) ===
+  }else if(ci===16){ type=TT.CHE; amount=10;
+  }else if(ci===17){ type=TT.HET; amount=15;
+  }else if(ci===18){ type=TT.CHE; amount=25;
+  }else if(ci===19){ type=TT.HET; amount=30;
+  // === PHASE 6: Forêt ancienne (needs axe 3) ===
+  }else if(ci===20){ type=TT.IFS; amount=8;
+  }else if(ci===21){ type=TT.TIL; amount=12;
+  }else if(ci===22){ type=TT.IFS; amount=20;
+  // === PHASE 7+: Primordiale rotation ===
+  }else{
+    const pool=[TT.IFS,TT.TIL,TT.SEQ,TT.PET,TT.HET];
+    type=pool[ci%pool.length];
+    amount=8+Math.floor((ci-22)*1.5);
+  }
   const ess=ESS[type];
   if(!ess)return;
-  const baseAmount=TUNING.contractMinAmount+Math.floor(Math.random()*(TUNING.contractMaxAmount-TUNING.contractMinAmount+1));
-  const amount=Math.max(1,baseAmount+amountMod);
-  const pricePerUnit=ess.gold+Math.ceil(ess.gold*(0.5+cuts*0.005)); // scaling reward
+  const pricePerUnit=ess.gold+Math.ceil(ess.gold*(0.3+ci*0.03));
   P._contract={
     type,
     name:ess.name,
     amount,
     pricePerUnit,
-    deadline:gt+TUNING.contractTimeLimit+timeBonus,
+    deadline:gt+TUNING.contractTimeLimit+timeBonus+Math.min(amount*8,300),
     acceptedAt:gt,
     zone:CONTRACT_ZONES[type]||'la forêt',
-    isTutorial:cuts===0,
+    isTutorial:ci===0,
   };
 }
 
@@ -3968,19 +3993,18 @@ function updShop(){
           if(delivered>=ct.amount){
             ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');
             P._contract=null;
-            P._contractCooldown=gt+TUNING.contractCooldown;
+            P._contractsDone=(P._contractsDone||0)+1;
+            generateContract(); // new contract immediately
           }else{
             ct.amount-=delivered;
             ft2(P.x,P.y-1,`📜 Reste: ${ct.amount}×${ct.name}`,'#e9c46a');
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;P._contractCooldown=gt+TUNING.contractCooldown*0.5;ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
-    }else if(gt < P._contractCooldown){
-      const wait=Math.ceil(P._contractCooldown-gt);
-      items.push({n:`📜 Prochain contrat dans ${wait}s...`,c:9999,a:()=>{}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;generateContract();ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
     }else{
-      items.push({n:'📜 Nouveau contrat disponible (revenez)',c:9999,a:()=>{}});
+      // No contract — generate immediately
+      generateContract();
     }
     
     // 3. Loan
