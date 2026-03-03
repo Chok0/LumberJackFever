@@ -3456,10 +3456,18 @@ function genMap(){
             map[y][x]=TT.BU;
         }
         if(!inVil && map[y][x]===TT.G && vy>=1 && vy<=10){
-          const r=n2(x,y,seed+500);
-          if(r>.7) map[y][x]=TT.BOU;
-          else if(r>.6) map[y][x]=TT.NOI;
-          else if(r>.55) map[y][x]=TT.BU;
+          // vy 1-5: mostly clear (village outskirts, safe for beginners)
+          // vy 6-10: sparse trees (transition to lisière)
+          if(vy>=6){
+            const r=n2(x,y,seed+500);
+            if(r>.82) map[y][x]=TT.BOU;
+            else if(r>.78) map[y][x]=TT.NOI;
+            else if(r>.92) map[y][x]=TT.BU;
+          }else{
+            // Only flowers and occasional bush near village
+            if(n2(x,y,seed+500)>.93) map[y][x]=TT.FL;
+            else if(n2(x,y,seed+501)>.96) map[y][x]=TT.BU;
+          }
         }
         continue;
       }
@@ -3891,6 +3899,8 @@ function findStumpCluster(sx,sy){
 // After cutting: check if this stump creates a dangerous cluster
 // Now uses density check: rewards spaced cutting patterns
 function checkCorrTrigger(tx,ty){
+  // Village safe zone — no corruption near village
+  if(inVillageZone(tx,ty))return;
   const cluster=findStumpCluster(tx,ty);
   // Check 1: cluster size must exceed threshold
   if(cluster.length>=TUNING.corrMinCluster){
@@ -4058,6 +4068,12 @@ function getRestauration(){return Math.min(1,(P._axeRestauration||0)/80)}
 function getComprehension(){return Math.min(1,(P._axeComprehension||0)/30)}
 function getMaitrise(){return Math.min(1,(P._axeMaitrise||0)/40)}
 
+// Village safe zone: no corruption, no enemy spawns within ~10 tiles of village
+function inVillageZone(tx,ty){
+  const VIL_Y=MH-12;
+  return ty>=VIL_Y-10 && Math.abs(tx-128)<=20;
+}
+
 // Corruption only spreads from marked source tiles (contiguous clear-cuts)
 let _corrSources=[]; // list of [x,y] source positions for fast iteration
 let _corrT2=0;
@@ -4066,13 +4082,13 @@ function updCorr(d){
   const sr=TUNING.corrSpreadRadius;
   // Only iterate known sources
   _corrSources.forEach(([x,y])=>{
-    // Skip tiles protected by sacred aura
-    if(inSacredAura(x,y))return;
+    // Skip tiles in village safe zone or sacred aura
+    if(inVillageZone(x,y)||inSacredAura(x,y))return;
     for(let dy=-Math.ceil(sr);dy<=Math.ceil(sr);dy++)for(let dx=-Math.ceil(sr);dx<=Math.ceil(sr);dx++){
       const nx=x+dx,ny=y+dy;
       if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
-      // Skip tiles in sacred aura
-      if(inSacredAura(nx,ny))continue;
+      // Skip tiles in village zone or sacred aura
+      if(inVillageZone(nx,ny)||inSacredAura(nx,ny))continue;
       const di=Math.sqrt(dx*dx+dy*dy);
       if(di>sr)continue;
       if(corr[ny][nx]<1){
@@ -4113,7 +4129,7 @@ function spawnE(){
   const escalated=gt>TUNING.enemyEscalateTime;
   const px2=Math.floor(P.x),py2=Math.floor(P.y);
   const spRate=TUNING.enemySpawnRate*(escalated?3:1);
-  for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
+  for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){if(inVillageZone(x,y))continue;const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
 function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
