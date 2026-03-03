@@ -302,7 +302,8 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   // New systems
   ARBRE_CHANT:100, // Arbre-Chant unique sacred tree (player-planted)
   SEED_TILE:101,   // Growing seed (sapling from Jardinier seeds)
-  BROKEN_AXE:102,  // Broken legendary axe (world pickup)
+  BROKEN_AXE:102,  // Broken legendary axe (world pickup — stuck in stump)
+  CABIN_ABAND:103, // Abandoned cabin (deep forest clearing scene)
   HERM_E:110,      // Estelle — Combat Hermit
   HERM_J:111,      // Ermite Jardinier
   HERM_T:112,      // Ermite Triste
@@ -2141,9 +2142,16 @@ const NPC_DATA = {
     visited: false,
   },
   [TT.BROKEN_AXE]: {
-    name: 'Hache Brisée',
-    title: '⚔️ Relique',
-    borderCol: '#d4a574',
+    name: 'Souche ancienne',
+    title: '⚔️ Hache fichée dans la souche',
+    borderCol: '#daa520',
+    visited: false,
+    noDialogue: true,
+  },
+  [TT.CABIN_ABAND]: {
+    name: 'Cabane abandonnée',
+    title: '🏚️ Cabane abandonnée',
+    borderCol: '#5a4030',
     visited: false,
     noDialogue: true,
   },
@@ -3517,17 +3525,24 @@ function genMap(){
   const hWX=Math.floor(10+n2(41,50,seed+957)*60),hWY=Math.floor(40+n2(41,51,seed+958)*120);
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const nx=hWX+dx,ny=hWY+dy;if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){if(dx===0&&dy===0)map[ny][nx]=TT.HERM;else map[ny][nx]=TT.G}}
 
-  // === BROKEN LEGENDARY AXE — hidden in Forêt Ancienne ===
-  const brAxeX=Math.floor(30+n2(99,50,seed+980)*60);
-  const brAxeY=Math.floor(B_PRIM+15+n2(99,51,seed+981)*(B_ANC-B_PRIM-30));
-  for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+  // === BROKEN LEGENDARY AXE — clearing in Forêt Profonde (Primordiale) ===
+  // Scene: abandoned cabin in a clearing, axe stuck in a stump in front
+  const brAxeX=Math.floor(30+n2(99,50,seed+980)*50);
+  const brAxeY=Math.floor(8+n2(99,51,seed+981)*(B_PRIM-18));
+  const cabinX=brAxeX, cabinY=brAxeY-2; // cabin 2 tiles north of axe
+  // Clear a large clearing (radius 4) around the scene
+  for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
     const nx=brAxeX+dx,ny=brAxeY+dy;
     if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
-      if(dx===0&&dy===0) map[ny][nx]=TT.BROKEN_AXE;
-      else map[ny][nx]=TT.G;
+      if(dx*dx+dy*dy<=18) map[ny][nx]=TT.G; // circular clearing ~radius 4
     }
   }
+  // Place abandoned cabin (north of stump)
+  if(cabinY>1&&cabinX>1&&cabinX<MW-1) map[cabinY][cabinX]=TT.CABIN_ABAND;
+  // Place broken axe (stuck in stump, south of cabin)
+  map[brAxeY][brAxeX]=TT.BROKEN_AXE;
   window._brokenAxePos={x:brAxeX,y:brAxeY};
+  window._cabinAbandPos={x:cabinX,y:cabinY};
 
   corrSrc=Array.from({length:MH},()=>Array(MW).fill(false));
   _corrSources=[];
@@ -3554,7 +3569,7 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
 function isS(t){return isT(t)||t===TT.WA||t===TT.RK||t===TT.BARR||isBld(t)||isDeco(t)||t===TT.SEED_TILE}
 
@@ -4628,20 +4643,29 @@ function updShop(){
     // Broken Legendary Axe pickup
     items=[];
     if(!P._brokenAxeFound){
-      items.push({n:'⚔️ Ramasser la Hache Brisée',c:0,a:()=>{
+      items.push({n:'⚔️ Arracher la Hache de la souche',c:0,a:()=>{
         P._brokenAxeFound=true;
         P._brokenAxeItem=true;
-        map[Math.floor(P.y)][Math.floor(P.x)]=TT.G; // Remove from map (find nearby BROKEN_AXE tile)
+        map[Math.floor(P.y)][Math.floor(P.x)]=TT.G;
         const bax=window._brokenAxePos;
-        if(bax)map[bax.y][bax.x]=TT.G;
+        if(bax)map[bax.y][bax.x]=TT.ST; // Leave the stump behind
         ft2(P.x,P.y,'⚔️ Hache Légendaire Brisée trouvée!','#d4a574');
         sfxLore();shake=.3;
         updShop();
       }});
-      items.push({n:'   Une hache ancienne, brisée. La lame a un éclat étrange...',c:9999,a:()=>{}});
+      items.push({n:'   Une hache ancienne fichée dans une vieille souche...',c:9999,a:()=>{}});
+      items.push({n:'   La lame brisée émet un éclat doré étrange.',c:9999,a:()=>{}});
+      items.push({n:'   Une cabane abandonnée se dresse derrière, envahie par la mousse.',c:9999,a:()=>{}});
     }else{
       items.push({n:'   (Déjà récupérée)',c:9999,a:()=>{}});
     }
+  }else if(t===TT.CABIN_ABAND){
+    // Abandoned cabin — flavor text only
+    items=[];
+    items.push({n:'🏚️ Cabane abandonnée',c:9999,a:()=>{}});
+    items.push({n:'   Le toit s\'effondre, la mousse recouvre les murs.',c:9999,a:()=>{}});
+    items.push({n:'   Quelqu\'un vivait ici, il y a très longtemps...',c:9999,a:()=>{}});
+    items.push({n:'   Des marques de hache couvrent le chambranle de la porte.',c:9999,a:()=>{}});
   }else if(t===TT.LUTH){
     // Luthier: instrument collection (wood→instruments)
     const instrumentDefs=[
@@ -4958,19 +4982,63 @@ function dObj(wx,wy){
     X.strokeStyle='#888';X.lineWidth=1*SC;X.beginPath();X.moveTo(sx2+44*SC,sy2-6*SC);X.lineTo(sx2+52*SC,sy2-14*SC);X.stroke();
   }
   else if(tile===TT.BROKEN_AXE){
-    // Broken axe on the ground — glowing relic
+    // Broken axe stuck in a tree stump — glowing relic in clearing
     const sx2=px2,sy2=py2;
     const pulse=Math.sin(gt*2)*.15+.85;
-    X.globalAlpha=.15*pulse;X.fillStyle='#daa520';
-    X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T/2*SC,20*SC,20*SC,0,0,Math.PI*2);X.fill();
+    // Pulsing golden aura
+    X.globalAlpha=.12*pulse;X.fillStyle='#daa520';
+    X.beginPath();X.ellipse(sx2+T/2*SC,sy2+T/2*SC,22*SC,22*SC,0,0,Math.PI*2);X.fill();
     X.globalAlpha=1;
-    // Axe handle
-    X.fillStyle='#6a4a2a';X.fillRect(sx2+10*SC,sy2+8*SC,6*SC,28*SC);
-    // Broken blade
-    X.fillStyle='#8a7a5a';X.fillRect(sx2+6*SC,sy2+4*SC,14*SC,8*SC);
-    X.fillStyle='#6a6a5a';X.fillRect(sx2+16*SC,sy2+6*SC,8*SC,6*SC);
-    // Crack
-    X.fillStyle='#333';X.fillRect(sx2+14*SC,sy2+5*SC,2*SC,6*SC);
+    // Tree stump (large, old)
+    X.fillStyle='#5a4020';X.fillRect(sx2+12*SC,sy2+18*SC,40*SC,18*SC); // stump body
+    X.fillStyle='#4a3418';X.fillRect(sx2+10*SC,sy2+16*SC,44*SC,4*SC); // stump top rim
+    X.fillStyle='#6a5030';X.fillRect(sx2+16*SC,sy2+20*SC,32*SC,14*SC); // stump face
+    // Tree rings on stump top
+    X.strokeStyle='#7a6040';X.lineWidth=1*SC;
+    X.beginPath();X.ellipse(sx2+32*SC,sy2+18*SC,14*SC,3*SC,0,0,Math.PI*2);X.stroke();
+    X.beginPath();X.ellipse(sx2+32*SC,sy2+18*SC,8*SC,2*SC,0,0,Math.PI*2);X.stroke();
+    // Moss on stump
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+10*SC,sy2+30*SC,6*SC,6*SC);
+    X.fillStyle='#4a7a4a';X.fillRect(sx2+46*SC,sy2+28*SC,8*SC,8*SC);
+    // Axe handle sticking up from stump (embedded)
+    X.fillStyle='#7a5a3a';X.fillRect(sx2+29*SC,sy2-6*SC,6*SC,24*SC); // handle
+    X.fillStyle='#6a4a2a';X.fillRect(sx2+28*SC,sy2-8*SC,8*SC,4*SC); // grip
+    // Broken blade at top of handle
+    X.fillStyle='#8a7a5a';X.fillRect(sx2+22*SC,sy2-14*SC,12*SC,8*SC); // blade left
+    X.fillStyle='#6a6a5a';X.fillRect(sx2+34*SC,sy2-12*SC,6*SC,6*SC); // blade right (broken short)
+    // Crack in blade
+    X.fillStyle='#333';X.fillRect(sx2+30*SC,sy2-13*SC,2*SC,6*SC);
+    // Subtle glow on blade
+    X.globalAlpha=.2*pulse;X.fillStyle='#ffd700';
+    X.fillRect(sx2+22*SC,sy2-16*SC,18*SC,12*SC);
+    X.globalAlpha=1;
+  }
+  else if(tile===TT.CABIN_ABAND){
+    // Abandoned cabin in the deep forest clearing
+    const sx2=px2,sy2=py2;
+    // Cabin body (weathered dark wood)
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+2*SC,sy2-4*SC,60*SC,44*SC);
+    X.fillStyle='#4a3a2a';X.fillRect(sx2+6*SC,sy2+0*SC,52*SC,36*SC);
+    // Roof (sagging, damaged)
+    X.fillStyle='#2a1a0a';X.fillRect(sx2-2*SC,sy2-12*SC,68*SC,10*SC);
+    X.fillStyle='#3a2818';X.fillRect(sx2+2*SC,sy2-16*SC,60*SC,6*SC);
+    X.fillStyle='#2a1a0a';X.fillRect(sx2+10*SC,sy2-18*SC,44*SC,4*SC);
+    // Hole in roof
+    X.fillStyle='#1a1a1a';X.fillRect(sx2+36*SC,sy2-14*SC,10*SC,8*SC);
+    // Door (ajar, dark)
+    X.fillStyle='#1a1008';X.fillRect(sx2+24*SC,sy2+8*SC,16*SC,28*SC);
+    X.fillStyle='#2a1a0a';X.fillRect(sx2+24*SC,sy2+8*SC,3*SC,28*SC); // door frame left
+    // Window (broken, dark)
+    X.fillStyle='#1a2a2a';X.fillRect(sx2+8*SC,sy2+4*SC,12*SC,10*SC);
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+13*SC,sy2+4*SC,2*SC,10*SC); // window frame
+    X.fillStyle='#3a2a1a';X.fillRect(sx2+8*SC,sy2+8*SC,12*SC,2*SC);
+    // Moss & overgrowth on walls
+    X.fillStyle='#2a5a2a';X.fillRect(sx2+2*SC,sy2+30*SC,14*SC,10*SC);
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+50*SC,sy2+26*SC,12*SC,14*SC);
+    X.fillStyle='#1a4a1a';X.fillRect(sx2+4*SC,sy2-6*SC,8*SC,6*SC);
+    // Vines on side
+    X.fillStyle='#2a5a2a';X.fillRect(sx2+58*SC,sy2-10*SC,4*SC,30*SC);
+    X.fillStyle='#3a6a3a';X.fillRect(sx2+60*SC,sy2-4*SC,4*SC,8*SC);
   }
   else if(tile===TT.SEED_TILE){
     // Growing seed — small sprout
@@ -5383,6 +5451,8 @@ function dMM(){
     else if(t===TT.HERM)c='#556b2f';
     else if(t===TT.LUTH)c='#d4a017';
     else if(t===TT.BARR)c='#8b4513';
+    else if(t===TT.BROKEN_AXE)c='#daa520';
+    else if(t===TT.CABIN_ABAND)c='#3a2a1a';
     else if(isDeco(t))c='#b0a070';
     else if(t===TT.HERB)c='#52b788';
     else if(t===TT.MUSH)c='#9060b0';
