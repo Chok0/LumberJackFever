@@ -6543,19 +6543,20 @@ function dFX(){
     // Dark wash over everything
     FX.fillStyle=`rgba(2,1,8,${nightMul*.45})`;
     FX.fillRect(0,0,FCV.width,FCV.height);
-    // Cut out circle around player (torch cone)
+    // Cut out circle around player so they remain visible
     if(nightMul>.15){
       const sx=(P.x-smCam.x)*T*SC,sy=(P.y-smCam.y)*T*SC;
       const flk=Math.sin(gt*7)*.05+Math.sin(gt*11)*.03;
-      const cutR=(110+flk*30)*SC;
-      const gr=FX.createRadialGradient(sx,sy,0,sx,sy,cutR);
-      gr.addColorStop(0,`rgba(2,1,8,${-nightMul*.55})`); // subtract
-      gr.addColorStop(.3,'rgba(0,0,0,0)');
-      gr.addColorStop(1,'rgba(0,0,0,0)');
+      const hasTorch=P._torchActive&&P._torches>0;
+      const hasLantern=P._hasLantern;
+      const lanternLvl=P._lanternLvl||1;
+      const lightLvl=hasLantern?(0.8+lanternLvl*0.25):hasTorch?0.5:0.2;
+      const cutR=(60+lightLvl*80+flk*30)*SC;
       FX.globalCompositeOperation='destination-out';
-      const gr2=FX.createRadialGradient(sx,sy,0,sx,sy,cutR);
-      gr2.addColorStop(0,`rgba(0,0,0,${nightMul*.5})`);
-      gr2.addColorStop(.4,`rgba(0,0,0,${nightMul*.25})`);
+      const gr2=FX.createRadialGradient(sx,sy-4*SC,0,sx,sy-4*SC,cutR);
+      gr2.addColorStop(0,'rgba(0,0,0,1)');
+      gr2.addColorStop(.3,`rgba(0,0,0,${0.7*lightLvl})`);
+      gr2.addColorStop(.7,`rgba(0,0,0,${0.2*lightLvl})`);
       gr2.addColorStop(1,'rgba(0,0,0,0)');
       FX.fillStyle=gr2;FX.fillRect(0,0,FCV.width,FCV.height);
       FX.globalCompositeOperation='source-over';
