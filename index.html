@@ -90,9 +90,9 @@ const TUNING = {
   // -- Player --
   playerBaseHp: 5,
   playerBaseStamina: 100,
-  playerSpeed: 3.5,
+  playerSpeed: 3.85,
   dashSpeedMult: 3.0,
-  dashStaCost: 45,
+  dashStaCost: 80,
   cutStaCost: 15,
   cutCooldown: 0.3,
   staRegen: 30,
@@ -124,12 +124,12 @@ const TUNING = {
   // -- Sacred Trees --
   sacredPerBiome: 2,
   // -- Enemies (time-based escalation) --
-  enemyMaxBase: 4,          // low early
-  enemyCutsScaling: 0.15,
-  enemyTimeScaling: 0.02,   // +max enemies per game-minute
-  enemySpawnRate: 0.002,    // base spawn chance per tick per corrupted tile
+  enemyMaxBase: 2,          // very low early — grows gradually
+  enemyCutsScaling: 0.08,   // slower scaling per tree cut
+  enemyTimeScaling: 0.01,   // slower time-based scaling
+  enemySpawnRate: 0.001,    // halved base spawn rate
   enemyFirstSpawnTime: 240,  // seconds (~4min) before first enemy can spawn
-  enemyEscalateTime: 600,   // seconds (10min) enemies get stronger
+  enemyEscalateTime: 1200,  // seconds (20min) before escalation starts
   // -- Wolves (nocturnal) --
   wolfMaxPacks: 3,           // max simultaneous wolf packs
   wolfPackSize: [2,4],       // min/max wolves per pack
@@ -321,8 +321,9 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   DOCTOR:104,      // Doctor NPC (arrives after first contract)
   RIVER:105,       // River tile (flowing water, interactable for raft)
   BRIDGE:106,      // Bridge over river (walkable)
-  ARCHITECT:107,   // Architect NPC (arrives on first river sighting)
+  ARCHITECT:107,   // (deprecated — replaced by CASTOR)
   VIL_BARRICADE:108, // Village barricade (protection from corruption mobs)
+  CASTOR:109,      // Beaver NPC (sells raft/bridge/barricade plans)
   HERM_E:110,      // Estelle — Combat Hermit
   HERM_J:111,      // Ermite Jardinier
   HERM_T:112,      // Ermite Triste
@@ -369,7 +370,7 @@ let _wolfPacks=0,_wolfSpawnT=0; // pack count & spawn cooldown timer
 let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
   invCap:30,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
   herbs:0,mushrooms:0, // collected from clearings
-  chestWood:0,chestSap:0, // stored in house chest
+  chestWood:0,chestSap:0,chestWoodByType:{}, // stored in house chest
   woodByType:{}, // track wood per essence: {tileType: count}
   _contract:null, // {type,name,amount,pricePerUnit,deadline,acceptedAt}
   _contractsDone:0, // contracts completed — drives progression
@@ -378,6 +379,13 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _grandparentTalked:0, // times talked to grandparent
   _axeDur:50, // current axe durability
   _axeMaxDur:50, // max durability (base + level bonus)
+  _repairCount:0, // times axe has been repaired (+1g per repair)
+  _axeDurLevel:0, // durability upgrade level (0-5)
+  _hasDash:false, // learned dash skill from Estelle
+  _hasLantern:false, // permanent night light
+  _torches:0, // consumable torches (120s each)
+  _torchActive:false, // torch currently lit
+  _torchTimer:0, // seconds on current torch
   // Village milestones
   _deepestBiome:0, // 0=lisière,1=mixte,2=ancienne,3=primordiale
   _firstCorruption:false,
@@ -653,13 +661,13 @@ const SPRITE_CAT={noi:'s',aul:'s',bou:'s',era:'m',pin:'m',fre:'m',che:'l',het:'l
 // dayPhase: 0=midnight, ~0.5=noon — SUMMER: long days, short nights
 function getDayState(){
   const p=dayPhase;
-  if(p<0.08){// deep night - short
+  if(p<0.08){// deep night - very dark
     const t=p/0.08;
-    const pulse=Math.sin(t*Math.PI)*.03;
-    return{sun:0,r:Math.floor(4+pulse*10),g:Math.floor(3+pulse*5),b:Math.floor(10+pulse*15),tint:'#050310',name:'🌙 Nuit',fog:.2,nightMul:.92};
+    const pulse=Math.sin(t*Math.PI)*.02;
+    return{sun:0,r:Math.floor(2+pulse*5),g:Math.floor(1+pulse*3),b:Math.floor(5+pulse*8),tint:'#020108',name:'🌙 Nuit',fog:.3,nightMul:.97};
   }else if(p<0.14){// pre-dawn
     const t=(p-0.08)/0.06;
-    return{sun:t*.08,r:Math.floor(4+t*18),g:Math.floor(3+t*10),b:Math.floor(10+t*25),tint:lerpC('#050310','#1a0830',t),name:'🌙 Aube naissante',fog:.12*(1-t*.5),nightMul:.92-.42*t};
+    return{sun:t*.05,r:Math.floor(2+t*20),g:Math.floor(1+t*12),b:Math.floor(5+t*30),tint:lerpC('#020108','#1a0830',t),name:'🌙 Aube naissante',fog:.2*(1-t*.5),nightMul:.97-.47*t};
   }else if(p<0.20){// dawn
     const t=(p-0.14)/0.06;
     const t2=t*t*(3-2*t);
@@ -677,10 +685,10 @@ function getDayState(){
     const t=(p-0.75)/0.13;
     const t2=t*t*(3-2*t);
     return{sun:.55-.55*t2,r:Math.floor(175-t2*148),g:Math.floor(145-t2*128),b:Math.floor(140-t2*105),tint:lerpC('#e8a850','#200820',t2),name:'🌆 Crépuscule',fog:.03*t2,nightMul:t2*.7};
-  }else{// nightfall - quick
+  }else{// nightfall - quick, gets very dark
     const t=(p-0.88)/0.12;
     const t2=t*t;
-    return{sun:0,r:Math.floor(27-t2*23),g:Math.floor(17-t2*14),b:Math.floor(35-t2*25),tint:lerpC('#200820','#050310',t2),name:'🌙 Nuit tombante',fog:.06+t2*.14,nightMul:.7+t2*.22};
+    return{sun:0,r:Math.floor(27-t2*25),g:Math.floor(17-t2*16),b:Math.floor(35-t2*30),tint:lerpC('#200820','#020108',t2),name:'🌙 Nuit tombante',fog:.06+t2*.24,nightMul:.7+t2*.27};
   }
 }
 
@@ -2215,6 +2223,12 @@ const NPC_DATA = {
     borderCol: '#b58863',
     visited: false,
   },
+  [TT.CASTOR]: {
+    name: 'Castor Bâtisseur',
+    title: '🦫 Castor',
+    borderCol: '#8B6914',
+    visited: false,
+  },
 };
 
 // ============ SACRED TREE LORE SYSTEM ============
@@ -3746,6 +3760,23 @@ function genMap(){
       }
     }
     window._rivers.push({label:rs.label,path:riverPath});
+    // Place a Castor NPC near this river in Mixte/Ancienne zone
+    const castorCandidates=riverPath.filter(p=>p.y>B_ANC&&p.y<B_MIX);
+    if(castorCandidates.length>10){
+      const cp=castorCandidates[Math.floor(castorCandidates.length/2)];
+      // Find adjacent non-river tile
+      for(const cdx of[-2,2,-3,3]){
+        const cx=cp.x+cdx,cy=cp.y;
+        if(cx>2&&cx<MW-2&&!isBld(map[cy][cx])&&map[cy][cx]!==TT.RIVER&&map[cy][cx]!==TT.WA){
+          map[cy][cx]=TT.CASTOR;
+          for(let ddy=-1;ddy<=1;ddy++)for(let ddx=-1;ddx<=1;ddx++){
+            const nx2=cx+ddx,ny2=cy+ddy;
+            if(nx2>0&&ny2>0&&nx2<MW-1&&ny2<MH-1&&map[ny2][nx2]!==TT.CASTOR&&map[ny2][nx2]!==TT.RIVER)map[ny2][nx2]=TT.G;
+          }
+          break;
+        }
+      }
+    }
   }
 
   // === BOSS ARENAS ===
@@ -3786,9 +3817,9 @@ function genMap(){
 
     // === THREE DISTINCT HERMITS ===
   const hermitPositions = [];
-  // Estelle (Combat Hermit) — Forêt Mixte / Tempéré
-  const estelleX=Math.floor(15+n2(0,50,seed+950)*96);
-  const estelleY=Math.floor(B_ANC+8+n2(0,51,seed+951)*(B_MIX-B_ANC-16));
+  // Estelle (Combat Hermit) — Lisière nord (rencontre rapide)
+  const estelleX=Math.floor(20+n2(0,50,seed+950)*88);
+  const estelleY=Math.floor(B_MIX+5+n2(0,51,seed+951)*(VIL_Y-B_MIX-18));
   for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
     const nx=estelleX+dx,ny=estelleY+dy;
     if(nx>1&&ny>1&&nx<MW-1&&ny<MH-14){
@@ -3877,7 +3908,7 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT||t===TT.CASTOR}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART}
 function isS(t){return isT(t)||t===TT.WA||t===TT.RK||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
 function isPlayerBlocked(t){return isS(t)&&t!==TT.BARR}
@@ -4127,9 +4158,10 @@ function spawnE(){
   const gameMin=gt/60;
   const mx=Math.min(30,TUNING.enemyMaxBase+Math.floor(cuts*TUNING.enemyCutsScaling)+Math.floor(gameMin*TUNING.enemyTimeScaling));
   if(ents.length>=mx)return;
-  const escalated=gt>TUNING.enemyEscalateTime;
+  const escProgress=Math.max(0,Math.min(1,(gt-TUNING.enemyEscalateTime)/1200)); // ramps over 20min after threshold
+  const escalated=escProgress>0;
   const px2=Math.floor(P.x),py2=Math.floor(P.y);
-  const spRate=TUNING.enemySpawnRate*(escalated?3:1);
+  const spRate=TUNING.enemySpawnRate*(1+escProgress*2); // gradual ×1 → ×3
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){if(inVillageZone(x,y))continue;const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
@@ -4146,7 +4178,7 @@ function hurtP(dmg,iv,ht,shk,col,n,attacker){
     ft2(P.x,P.y-1,'🛡️ Contre!','#ffd700');sfxHit();
     return;
   }
-  P.hp-=dmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
 }
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
@@ -4654,7 +4686,8 @@ function updP2(d){
   if(K.ArrowRight||K.KeyD){mx=1;P.f=1}
   if(mx&&my){mx*=.707;my*=.707}
   let spd=P.spd;P.dt=Math.max(0,P.dt-d);P.dc=Math.max(0,P.dc-d);
-  if(K.KeyC&&P.sta>20&&P.dc<=0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult;P.sta-=TUNING.dashStaCost*d;P.dt=.15}
+  if(K.KeyC&&P._hasDash&&P.sta>TUNING.dashStaCost&&P.dc<=0&&(mx||my)){K.KeyC=false;P.dc=.5;P.dt=.2;P.sta-=TUNING.dashStaCost}
+  if(P.dt>0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult}
   if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
   if(nx>=.3&&nx<MW-.3&&!isPlayerBlocked(map[Math.floor(P.y)][Math.floor(nx)]))P.x=nx;
@@ -4771,7 +4804,7 @@ function updP2(d){
         ft2(P.x,P.y-1,'⚠️ Hache fragile !','#e9c46a');
       }
       const need=ess.hp;
-      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/2)):P.pow;
+      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/4)):P.pow;
       sp(tx+.5,ty+.5,'#8B6914',4);shake=.07;
       // Show name on first hit
       if(_th[hk]===P.pow)ft2(tx+.5,ty-.5,ess.name,'#b7e4c7');
@@ -4943,6 +4976,7 @@ function shopTitle(t){
   if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
   if(t===TT.DOCTOR)return'💊 Dr. Engström';
   if(t===TT.ARCHITECT)return'🏗️ Sven — Architecte';
+  if(t===TT.CASTOR)return'🦫 Castor Bâtisseur';
   return'🏠 Village';
 }
 function updShop(){
@@ -4951,23 +4985,34 @@ function updShop(){
   document.querySelector('#shp h2').textContent=shopTitle(t);
   let items=[];
   if(t===TT.TAV){
-    // Taverne: food, bag upgrades, sap, SLEEP
-    const isNight = dayPhase < 0.14 || dayPhase > 0.82;
+    // Taverne: food, bag upgrades, sap, torches
     items=[
       {n:'🍖 Repas (soins max)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️','#e74c3c')}},
-      {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(déjà jour)'}`,c:isNight?5:9999,a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700')}},
+      {n:`🔥 Acheter 3 torches (stock: ${P._torches||0})`,c:5,a:()=>{P._torches=(P._torches||0)+3;ft2(P.x,P.y,'🔥+3 Torches','#e9c46a');updShop()}},
+      {n:P._torchActive?'🔥 Éteindre la torche':'🔥 Allumer une torche',c:0,a:()=>{if(!P._torchActive&&(P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}else{ft2(P.x,P.y,'Pas de torches!','#e74c3c')};updShop()}},
       {n:`📦 Sac +${TUNING.bagUpgradeAmount} (${P.invCap}→${P.invCap+TUNING.bagUpgradeAmount})`,c:P.invCap<=30?TUNING.bagUpgradeCost1:P.invCap<=45?TUNING.bagUpgradeCost2:TUNING.bagUpgradeCost3,a:()=>{P.invCap+=TUNING.bagUpgradeAmount;ft2(P.x,P.y,`📦+${TUNING.bagUpgradeAmount}`,'#8B6914')}},
       {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellTaverne} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellTaverne;P.g+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
     ];
   }else if(t===TT.FORGE){
     // Forgeron: axes + stamina + repair
     const costs=[TUNING.axeCost1,TUNING.axeCost2,TUNING.axeCost3];
-    const maxDur=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1);
+    const durLvl=P._axeDurLevel||0;
+    const maxDur=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1)+durLvl*20;
+    P._axeMaxDur=maxDur;
     const durPct=Math.round(P._axeDur/maxDur*100);
-    const repCost=Math.ceil(TUNING.axeRepairCost*(1+(P.axe-1)*.5));
+    const repCost=Math.ceil(TUNING.axeRepairCost*(1+(P.axe-1)*.5))+(P._repairCount||0);
+    const durUpCost=40+durLvl*30;
     items=[
-      {n:`🔧 Réparer hache (${durPct}% → 100%)`,c:P._axeDur>=maxDur?9999:repCost,a:()=>{P._axeDur=maxDur;P._axeMaxDur=maxDur;ft2(P.x,P.y,'🔧 Comme neuve!','#e9c46a');updShop()}},
-      {n:`🪓 Hache Niv.${P.axe+1} (dég:${P.axe+1})`,c:costs[Math.min(P.axe-1,2)]||999,a:()=>{P.axe++;P.pow=P.axe;const nd=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1);P._axeDur=nd;P._axeMaxDur=nd;ft2(P.x,P.y,`🪓 Niv.${P.axe}`,'#ccc');updShop()}},
+      {n:'── ENTRETIEN ──',c:9999,a:()=>{}},
+      {n:`🔧 Réparer hache (${durPct}% → 100%) — ${repCost} or`,c:P._axeDur>=maxDur?9999:repCost,a:()=>{P._axeDur=maxDur;P._axeMaxDur=maxDur;P._repairCount=(P._repairCount||0)+1;ft2(P.x,P.y,'🔧 Comme neuve!','#e9c46a');updShop()}},
+      {n:'── PUISSANCE (niveau de hache) ──',c:9999,a:()=>{}},
+      {n:`🪓 Hache Niv.${P.axe+1} (dég: ${P.axe}→${P.axe+1})`,c:costs[Math.min(P.axe-1,2)]||999,a:()=>{P.axe++;P.pow=P.axe;ft2(P.x,P.y,`🪓 Niv.${P.axe}`,'#ccc');updShop()}},
+      {n:'── DURABILITÉ ──',c:9999,a:()=>{}},
+      {n:`🔨 Renforcer: durabilité +20 (${maxDur}→${maxDur+20})`,c:durLvl>=5?9999:durUpCost,a:()=>{P._axeDurLevel=(P._axeDurLevel||0)+1;const nd=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1)+(P._axeDurLevel)*20;P._axeMaxDur=nd;P._axeDur=nd;ft2(P.x,P.y,`🔨 Durabilité: ${nd}`,'#e9c46a');updShop()}},
+      {n:`   Durabilité: ${maxDur} coups (niv.${durLvl}/5)`,c:9999,a:()=>{}},
+      {n:'── ÉQUIPEMENT ──',c:9999,a:()=>{}},
+      {n:P._hasLantern?'✅ Lanterne (acquise)':'🏮 Lanterne (lumière permanente la nuit)',c:P._hasLantern?9999:150,a:()=>{P._hasLantern=true;ft2(P.x,P.y,'🏮 Lanterne acquise!','#ffd700');updShop()}},
+      {n:'── AUTRE ──',c:9999,a:()=>{}},
       {n:`⚡ +25 Stamina (${P.msta}→${P.msta+25})`,c:P.msta<=100?60:150,a:()=>{P.msta+=25;P.sta=P.msta;ft2(P.x,P.y,'⚡+25','#3d85c6')}},
     ];
   }else if(t===TT.CHAM){
@@ -4975,7 +5020,10 @@ function updShop(){
     const potUnlocked = P.herbs >= TUNING.herbsForPotions;
     const encUnlocked = P.mushrooms >= TUNING.mushsForEncens;
     items=[
-      {n:`❤️ +2 PV (${P.mhp}→${P.mhp+2})`,c:P.mhp<=5?80:200,a:()=>{P.mhp+=2;P.hp=P.mhp;ft2(P.x,P.y,'❤️+2','#e74c3c')}},
+      {n:`❤️ +2 PV max (${P.mhp}→${P.mhp+2})`,c:P.mhp<=5?80:200,a:()=>{P.mhp+=2;P.hp=P.mhp;ft2(P.x,P.y,'❤️+2','#e74c3c');updShop()}},
+      {n:`🌿 Tonique vital: +1 PV (5 herbes, stock: ${P.herbs})`,c:P.herbs>=5?0:9999,a:()=>{if(P.herbs>=5){P.herbs-=5;P.mhp+=1;P.hp=P.mhp;ft2(P.x,P.y,'❤️+1 (herbes)','#52b788');updShop()}}},
+      {n:`🍄 Élixir d'écorce: résistance +1 (5 champignons, stock: ${P.mushrooms})`,c:P.mushrooms>=5?0:9999,a:()=>{if(P.mushrooms>=5){P.mushrooms-=5;P._armor=(P._armor||0)+1;ft2(P.x,P.y,`🛡️ Résistance: ${P._armor}`,`#b088d0`);updShop()}}},
+      {n:`   🛡️ Résistance actuelle: ${P._armor||0} (réduit les dégâts de ${P._armor||0})`,c:9999,a:()=>{}},
       potUnlocked
         ? {n:`🧪 Potion ×1 (stock: ${P._potions||0})`,c:12,a:()=>{P._potions=(P._potions||0)+1;ft2(P.x,P.y,'🧪+1','#e74c3c')}}
         : {n:`🧪 Potions — 🔒 ${P.herbs}/${TUNING.herbsForPotions} herbes`,c:9999,a:()=>{}},
@@ -5001,11 +5049,35 @@ function updShop(){
     const gmStatus=!P._gmAlive?'💀 Décédée':gmH>75?'😊 En forme':gmH>50?'😐 Fatiguée':gmH>25?'😰 Malade':'🛏️ Très faible';
     items=[
       {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(pas fatigué)'}`,c:isNight?0:9999,a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700');spawnDoctorIfReady()}},
-      {n:`📦 Déposer bois (coffre: ${P.chestWood})`,c:0,a:()=>{if(P.w>0){P.chestWood+=P.w;ft2(P.x,P.y,`📦+${P.w} bois`,'#c8a060');P.w=0;P.wv=0;P.woodByType={};updShop()}},wd:1},
-      {n:`📦 Déposer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.sap>0){P.chestSap+=P.sap;ft2(P.x,P.y,`📦+${P.sap} sève`,'#b088d0');P.sap=0;updShop()}}},
-      {n:`📦 Récupérer bois (coffre: ${P.chestWood})`,c:0,a:()=>{if(P.chestWood>0){const take=Math.min(P.chestWood,Math.floor(invFree()/RES_WEIGHT.wood));if(take>0){P.w+=take;P.chestWood-=take;ft2(P.x,P.y,`🪵+${take}`,'#deb887');updShop()}}},wd:1},
-      {n:`📦 Récupérer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.chestSap>0){const take=Math.min(P.chestSap,Math.floor(invFree()/RES_WEIGHT.sap));if(take>0){P.sap+=take;P.chestSap-=take;ft2(P.x,P.y,`💧+${take}`,'#b088d0');updShop()}}}},
+      {n:'══ COFFRE ══',c:9999,a:()=>{}},
     ];
+    // Per-type wood transfer: SAC → COFFRE
+    const bagTypes=Object.keys(P.woodByType||{}).filter(k=>(P.woodByType[k]||0)>0);
+    const chestTypes=Object.keys(P.chestWoodByType||{}).filter(k=>(P.chestWoodByType[k]||0)>0);
+    if(bagTypes.length>0){
+      items.push({n:'── Sac → Coffre (déposer) ──',c:9999,a:()=>{}});
+      bagTypes.forEach(tt=>{const amt=P.woodByType[tt];const eName=ESS[tt]?ESS[tt].name:('Type '+tt);
+        items.push({n:`  ➡️ Déposer ${amt}× ${eName}`,c:0,a:()=>{
+          if(!P.chestWoodByType)P.chestWoodByType={};
+          P.chestWoodByType[tt]=(P.chestWoodByType[tt]||0)+amt;P.chestWood+=amt;
+          P.w-=amt;P.wv=Math.max(0,(P.wv||0)-amt);P.woodByType[tt]=0;updShop()},wd:1});
+      });
+    }
+    if(chestTypes.length>0){
+      items.push({n:'── Coffre → Sac (récupérer) ──',c:9999,a:()=>{}});
+      chestTypes.forEach(tt=>{const amt=P.chestWoodByType[tt];const eName=ESS[tt]?ESS[tt].name:('Type '+tt);
+        const maxTake=Math.min(amt,Math.floor(invFree()/RES_WEIGHT.wood));
+        items.push({n:`  ⬅️ Récupérer ${amt}× ${eName}${maxTake<amt?' (place: '+maxTake+')':''}`,c:0,a:()=>{
+          const take=Math.min(amt,Math.floor(invFree()/RES_WEIGHT.wood));
+          if(take>0){P.w+=take;if(!P.woodByType)P.woodByType={};P.woodByType[tt]=(P.woodByType[tt]||0)+take;
+          P.chestWoodByType[tt]-=take;P.chestWood-=take;
+          if(P.chestWoodByType[tt]<=0)delete P.chestWoodByType[tt];updShop()}},wd:1});
+      });
+    }
+    // Sap
+    items.push({n:'── Sève ──',c:9999,a:()=>{}});
+    items.push({n:`  ➡️ Déposer sève (sac: ${P.sap}, coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.sap>0){P.chestSap+=P.sap;ft2(P.x,P.y,`📦+${P.sap} sève`,'#b088d0');P.sap=0;updShop()}}});
+    items.push({n:`  ⬅️ Récupérer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.chestSap>0){const take=Math.min(P.chestSap,Math.floor(invFree()/RES_WEIGHT.sap));if(take>0){P.sap+=take;P.chestSap-=take;ft2(P.x,P.y,`💧+${take}`,'#b088d0');updShop()}}}});
     // Grandmother health status
     if(P._doctorArrived&&P._gmAlive) items.push({n:`   👵 Grand-mère: ${gmStatus} (${gmH}%)`,c:9999,a:()=>{}});
     else if(!P._gmAlive) items.push({n:'   👵 Le lit est vide. La maison est silencieuse.',c:9999,a:()=>{}});
@@ -5039,11 +5111,12 @@ function updShop(){
     // Estelle — Combat training
     const t2=P._estelleTraining||0;
     items=[];
-    if(t2===0) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus+=30;addMaitrise(3);ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
+    if(!P._hasDash) items.push({n:'💨 Apprendre: Dash (C + direction)',c:15,a:()=>{P._hasDash=true;P._estelleTraining=Math.max(t2,1);addMaitrise(2);ft2(P.x,P.y,'💨 Dash appris!','#cc4444');updShop()}});
+    if(P._hasDash&&t2<1) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+30;addMaitrise(3);ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
     if(t2>=1&&!P._hasSkillCircular) items.push({n:'⚔️ Apprendre: Attaque circulaire (ESPACE×2)',c:60,a:()=>{P._hasSkillCircular=true;P._estelleTraining=2;addMaitrise(3);ft2(P.x,P.y,'⚔️ Attaque circulaire!','#cc4444');updShop()}});
     if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;addMaitrise(3);ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
     if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;addMaitrise(3);ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
-    if(t2>=4) items.push({n:'⚡ Stamina +25',c:80,a:()=>{P.msta+=25;P.sta=P.msta;P._staminaBonus+=25;ft2(P.x,P.y,'⚡+25 Stamina','#cc4444')}});
+    if(t2>=4) items.push({n:'⚡ Stamina +25',c:80,a:()=>{P.msta+=25;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+25;ft2(P.x,P.y,'⚡+25 Stamina','#cc4444')}});
     items.push({n:`   Entraînement: Niv.${t2} · Stamina bonus: +${P._staminaBonus||0}`,c:9999,a:()=>{}});
   }else if(t===TT.HERM_J){
     // Ermite Jardinier — Seeds & quest
@@ -5143,8 +5216,8 @@ function updShop(){
       items.push({n:'   "Je suis désolé... Il n\'y a plus rien que je puisse faire."',c:9999,a:()=>{}});
     }
     items.push({n:'💊 Soins personnels (restore HP)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️ Soigné!','#52b788')}});
-  }else if(t===TT.ARCHITECT){
-    // Architect: sell plans for rafts, bridges, barricades
+  }else if(t===TT.ARCHITECT||t===TT.CASTOR){
+    // Castor/Architect: sell plans for rafts, bridges, barricades
     items=[];
     items.push({n:'═══ PLANS DE CONSTRUCTION ═══',c:9999,a:()=>{}});
     if(!P._hasRaftPlan){
@@ -5641,9 +5714,21 @@ function dObj(wx,wy){
   else if(tile===TT.TAV)dSp('tav_b',wx,wy,-8,-20);
   else if(tile===TT.EMIS)dSp('emis_b',wx,wy,-4,-16);
   else if(tile===TT.HOME)dSp('home_b',wx,wy,-6,-18);
-  else if(tile===TT.CARTO){X.fillStyle='#3a6b9f';X.fillRect(wx+8,wy-8,48,48);X.fillStyle='#2a5a8a';X.fillRect(wx+12,wy-4,40,40);X.fillStyle='#f5e6c8';X.fillRect(wx+20,wy+4,24,24);X.fillStyle='#4a90d9';X.fillRect(wx+48,wy-14,12,8);X.fillStyle='#5a3a1a';X.fillRect(wx+46,wy-18,4,22)}
-  else if(tile===TT.ANTHRO){X.fillStyle='#8b6914';X.fillRect(wx+6,wy-6,52,46);X.fillStyle='#a0782a';X.fillRect(wx+10,wy-2,44,38);X.fillStyle='#f0e6d0';X.fillRect(wx+16,wy+6,12,20);X.fillStyle='#daa520';X.fillRect(wx+36,wy+8,8,16)}
-  else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(wx+4,wy-12,56,52);X.fillStyle='#4a5a3a';X.fillRect(wx+8,wy-8,48,44);X.fillStyle='#2a3a1a';X.fillRect(wx+2,wy-16,60,8);X.fillStyle='#1a2a0a';X.fillRect(wx+24,wy+4,16,28);X.fillStyle='#52b788';X.fillRect(wx+6,wy-10,4,20)}
+  else if(tile===TT.CARTO){X.fillStyle='#3a6b9f';X.fillRect(px2+8*SC,py2-8*SC,48*SC,48*SC);X.fillStyle='#2a5a8a';X.fillRect(px2+12*SC,py2-4*SC,40*SC,40*SC);X.fillStyle='#f5e6c8';X.fillRect(px2+20*SC,py2+4*SC,24*SC,24*SC);X.fillStyle='#4a90d9';X.fillRect(px2+48*SC,py2-14*SC,12*SC,8*SC);X.fillStyle='#5a3a1a';X.fillRect(px2+46*SC,py2-18*SC,4*SC,22*SC)}
+  else if(tile===TT.ANTHRO){X.fillStyle='#8b6914';X.fillRect(px2+6*SC,py2-6*SC,52*SC,46*SC);X.fillStyle='#a0782a';X.fillRect(px2+10*SC,py2-2*SC,44*SC,38*SC);X.fillStyle='#f0e6d0';X.fillRect(px2+16*SC,py2+6*SC,12*SC,20*SC);X.fillStyle='#daa520';X.fillRect(px2+36*SC,py2+8*SC,8*SC,16*SC)}
+  else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(px2+4*SC,py2-12*SC,56*SC,52*SC);X.fillStyle='#4a5a3a';X.fillRect(px2+8*SC,py2-8*SC,48*SC,44*SC);X.fillStyle='#2a3a1a';X.fillRect(px2+2*SC,py2-16*SC,60*SC,8*SC);X.fillStyle='#1a2a0a';X.fillRect(px2+24*SC,py2+4*SC,16*SC,28*SC);X.fillStyle='#52b788';X.fillRect(px2+6*SC,py2-10*SC,4*SC,20*SC)}
+  else if(tile===TT.CASTOR){
+    // Beaver dam — log pile near river
+    X.fillStyle='#6a4a20';X.fillRect(px2+2*SC,py2-4*SC,60*SC,40*SC);
+    X.fillStyle='#8B6914';X.fillRect(px2+6*SC,py2,48*SC,32*SC);
+    // Logs
+    X.fillStyle='#5a3a10';
+    for(let i=0;i<4;i++){X.fillRect(px2+(6+i*12)*SC,py2-6*SC,10*SC,4*SC)}
+    // Beaver face
+    X.fillStyle='#a07030';X.fillRect(px2+22*SC,py2+8*SC,20*SC,16*SC);
+    X.fillStyle='#fff';X.fillRect(px2+26*SC,py2+12*SC,4*SC,4*SC);X.fillRect(px2+34*SC,py2+12*SC,4*SC,4*SC);
+    X.fillStyle='#f5e0b0';X.fillRect(px2+28*SC,py2+20*SC,8*SC,6*SC); // teeth
+  }
   else if(tile===TT.DOCTOR){
     // Doctor's office — clinical, small building
     const sx2=px2,sy2=py2;
@@ -5984,28 +6069,33 @@ function dLighting(){
 
   LX.globalCompositeOperation='lighter';
 
-  // Player torch - MUCH more dramatic at night
-  // Smaller radius = tighter pool of light = scarier darkness around
+  // Player light source — depends on equipment
+  // Without light: near blind. Torch: medium. Lantern: full vision
   const torchIntensity=ds.sun<.35?(1-ds.sun/.35):0;
   if(torchIntensity>.02){
     const sx=(P.x-smCam.x)*T*SC,sy=(P.y-smCam.y)*T*SC;
-    // Torch flicker with multiple frequencies for realism
     const flk1=Math.sin(gt*7.3)*.1,flk2=Math.sin(gt*11.7)*.05,flk3=Math.sin(gt*17.1)*.03;
-    const flicker=torchIntensity*(.82+flk1+flk2+flk3);
-    // Inner warm core
-    const r1=(90+flk1*16)*SC;
+    // Light level: 0.15=bare eyes, 0.5=torch, 1.0=lantern
+    const hasTorch=P._torchActive&&P._torches>0;
+    const hasLantern=P._hasLantern;
+    const lightLvl=hasLantern?1.0:hasTorch?0.5:0.15;
+    const flicker=torchIntensity*(.82+flk1+flk2+flk3)*lightLvl;
+    // Inner warm core — radius scales with light level
+    const r1=(30+lightLvl*80+flk1*16)*SC;
     const gr1=LX.createRadialGradient(sx,sy-4*SC,0,sx,sy-4*SC,r1);
     gr1.addColorStop(0,`rgba(255,220,150,${flicker*1.1})`);
     gr1.addColorStop(.4,`rgba(255,180,100,${flicker*.7})`);
     gr1.addColorStop(1,'rgba(255,150,60,0)');
     LX.fillStyle=gr1;LX.fillRect(0,0,LCV.width,LCV.height);
     // Outer dim glow
-    const r2=(150+flk2*20)*SC;
+    const r2=(50+lightLvl*120+flk2*20)*SC;
     const gr2=LX.createRadialGradient(sx,sy,0,sx,sy,r2);
     gr2.addColorStop(0,`rgba(255,170,80,${flicker*.35})`);
     gr2.addColorStop(.5,`rgba(255,130,50,${flicker*.12})`);
     gr2.addColorStop(1,'rgba(255,100,30,0)');
     LX.fillStyle=gr2;LX.fillRect(0,0,LCV.width,LCV.height);
+    // Consume torch over time
+    if(hasTorch&&!hasLantern){P._torchTimer=(P._torchTimer||0)+1/60;if(P._torchTimer>120){P._torches--;P._torchTimer=0;if(P._torches<=0){P._torchActive=false;ft2(P.x,P.y,'🕯️ Dernière torche épuisée!','#e9c46a')}else{ft2(P.x,P.y,`🔥 Torche épuisée (${P._torches} restantes)`,'#e9c46a')}}}
   }
 
   // Sacred tree glow
@@ -6204,6 +6294,7 @@ function dMM(){
     else if(t===TT.CABIN_ABAND)c='#3a2a1a';
     else if(t===TT.DOCTOR)c='#4a8aaa';
     else if(t===TT.ARCHITECT)c='#b58863';
+    else if(t===TT.CASTOR)c='#8B6914';
     else if(t===TT.RIVER)c='#1a6aaa';
     else if(t===TT.BRIDGE)c='#8a6a3a';
     else if(t===TT.VIL_BARRICADE)c='#6a4a20';
@@ -6958,15 +7049,8 @@ function doPrimRenounce(){
 
 // ============ RIVER / RAFT / BRIDGE / BARRICADE SYSTEM ============
 function spawnArchitect(){
-  if(P._architectArrived)return;
-  P._architectArrived=true;
-  const CX=128, VIL_Y=MH-12;
-  // Place architect in village — near forge side
-  const ax=CX-4, ay=VIL_Y+6;
-  if(ay<MH&&ax>0&&ax<MW){
-    map[ay][ax]=TT.ARCHITECT;
-    P._architectPos={x:ax,y:ay};
-  }
+  // Architect removed — replaced by Castor NPCs near rivers in zone 2+
+  return;
 }
 function doRaftToVillage(rx,ry){
   const raftCost=5;
