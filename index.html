@@ -4202,8 +4202,9 @@ function checkCorrTrigger(tx,ty){
   // Village safe zone — no corruption near village
   if(inVillageZone(tx,ty))return;
   const cluster=findStumpCluster(tx,ty);
-  // Check 1: cluster size must exceed threshold (contiguous stumps)
-  // OR: enough stumps nearby even if not contiguous (scattered cutting still has impact)
+  // Only contiguous clusters trigger corruption — scattered smart cutting is rewarded
+  if(cluster.length<TUNING.corrMinCluster)return;
+  // Density check: the cluster zone must be sufficiently devastated
   const r=TUNING.corrDensityRadius;
   let stumps=0,total=0;
   for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
@@ -4214,23 +4215,8 @@ function checkCorrTrigger(tx,ty){
     if(map[ny][nx]===TT.ST)stumps++;
   }
   const density=stumps/Math.max(1,total);
-  // Trigger if EITHER: dense contiguous cluster OR enough scattered stumps nearby
-  const clusterOk=cluster.length>=TUNING.corrMinCluster;
-  const densityOk=density>=TUNING.corrDensityThreshold;
-  const scatteredOk=stumps>=TUNING.corrMinCluster+2; // 7+ stumps nearby even if not contiguous
-  if((clusterOk&&densityOk)||(scatteredOk)){
-    // Activate all stumps in the cluster + the immediate area
-    const toActivate=clusterOk?cluster:[];
-    // Also activate nearby stumps if scattered trigger
-    if(scatteredOk){
-      for(let dy2=-r;dy2<=r;dy2++)for(let dx2=-r;dx2<=r;dx2++){
-        const nx2=tx+dx2,ny2=ty+dy2;
-        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.ST&&Math.sqrt(dx2*dx2+dy2*dy2)<=r){
-          if(!toActivate.some(([ax,ay])=>ax===nx2&&ay===ny2))toActivate.push([nx2,ny2]);
-        }
-      }
-    }
-    toActivate.forEach(([x,y])=>{
+  if(density>=TUNING.corrDensityThreshold){
+    cluster.forEach(([x,y])=>{
       if(!corrSrc[y][x]){
         corrSrc[y][x]=true;
         _corrSources.push([x,y]);
@@ -5172,22 +5158,21 @@ function generateContract(){
   // Progression by contracts completed — volumes force upgrades, types push deeper
   const ci=P._contractsDone||0;
   let type, amount, timeBonus=0;
-  // === PHASE 1: Noisetier — learn, then intro variety ===
-  if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial
-  }else if(ci===1){ type=TT.NOI; amount=8;
-  }else if(ci===2){ type=TT.NOI; amount=15;
-  }else if(ci===3){ type=TT.AUL; amount=5;  // gentle intro to Aulne (small amount)
-  }else if(ci===4){ type=TT.NOI; amount=20; // fills base bag (30)
-  }else if(ci===5){ type=TT.BOU; amount=8;  // intro Bouleau before big NOI push
-  }else if(ci===6){ type=TT.NOI; amount=40; // forces bag upgrade 30→45
-  // === PHASE 2: Bouleau — clear-cutting begins, corruption ===
-  }else if(ci===7){ type=TT.BOU; amount=15;
-  }else if(ci===8){ type=TT.BOU; amount=25;
-  }else if(ci===9){ type=TT.AUL; amount=20; // breathing room
-  // === PHASE 3: Érable — push deeper into lisière ===
-  }else if(ci===10){ type=TT.ERA; amount=8;  // gentle intro (was 12)
-  }else if(ci===11){ type=TT.ERA; amount=15;
-  }else if(ci===12){ type=TT.ERA; amount=25;
+  // === PHASE 1: Alternance essences de lisière — coupe variée, pas de ratissage ===
+  if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial: apprendre à couper
+  }else if(ci===1){ type=TT.AUL; amount=5;  // nouvelle essence dès le 2e contrat
+  }else if(ci===2){ type=TT.BOU; amount=5;  // 3e essence
+  }else if(ci===3){ type=TT.NOI; amount=10; // retour au noisetier, volume plus gros
+  }else if(ci===4){ type=TT.ERA; amount=5;  // intro érable (hp:5, plus long à couper)
+  }else if(ci===5){ type=TT.AUL; amount=12; // volume croissant
+  }else if(ci===6){ type=TT.BOU; amount=15;
+  }else if(ci===7){ type=TT.NOI; amount=20; // premier gros contrat (sac plein)
+  }else if(ci===8){ type=TT.ERA; amount=10; // érable volume moyen
+  }else if(ci===9){ type=TT.BOU; amount=25; // forces bag upgrade 30→45
+  // === PHASE 2: Volumes croissants, push nord ===
+  }else if(ci===10){ type=TT.ERA; amount=15;
+  }else if(ci===11){ type=TT.AUL; amount=30;
+  }else if(ci===12){ type=TT.ERA; amount=20;
   // === PHASE 4: Pin/Frêne — transition, push toward mixte ===
   }else if(ci===13){ type=TT.PIN; amount=10;
   }else if(ci===14){ type=TT.FRE; amount=15;
