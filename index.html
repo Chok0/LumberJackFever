@@ -45,6 +45,24 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 #editor .ed-btn:hover{background:#2d6a4f}
 #editor .ed-top{display:flex;justify-content:space-between;align-items:center;padding:4px 0 8px;border-bottom:1px solid #52b788;margin-bottom:4px}
 #editor .ed-top h2{color:#52b788;font-size:13px;margin:0}
+#session-log{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(5,12,8,.96);z-index:200;display:none;color:#b7e4c7;font-family:'Courier New',monospace;overflow-y:auto;pointer-events:all}
+#session-log .sl-inner{max-width:720px;margin:0 auto;padding:16px}
+#session-log h2{color:#52b788;font-size:16px;text-align:center;margin-bottom:12px;letter-spacing:2px}
+#session-log h3{color:#52b788;font-size:12px;margin:12px 0 6px;border-bottom:1px solid #1b4332;padding-bottom:3px}
+#session-log .sl-row{display:flex;justify-content:space-between;padding:2px 0;font-size:10px;border-bottom:1px solid rgba(27,67,50,.3)}
+#session-log .sl-row .sl-lbl{color:#74c69d}
+#session-log .sl-row .sl-val{color:#d8f3dc;text-align:right}
+#session-log .sl-tags{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+#session-log .sl-tag{background:#1b4332;border:1px solid #40916c;border-radius:3px;padding:2px 6px;font-size:9px;color:#d8f3dc}
+#session-log .sl-event{font-size:9px;padding:2px 0;border-bottom:1px solid rgba(27,67,50,.2);color:#8fb}
+#session-log .sl-event .sl-etime{color:#52b788;display:inline-block;width:50px}
+#session-log .sl-event .sl-etype{color:#e9c46a;display:inline-block;width:60px}
+#session-log .sl-spark{font-family:monospace;font-size:9px;color:#52b788;letter-spacing:1px}
+#session-log .sl-bar{display:flex;gap:2px;align-items:center;margin:4px 0}
+#session-log .sl-close{position:fixed;top:8px;right:16px;background:#1b4332;color:#d8f3dc;border:1px solid #40916c;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:10px;z-index:201}
+#session-log .sl-close:hover{background:#2d6a4f}
+#session-log .sl-export{background:#1b4332;color:#d8f3dc;border:1px solid #40916c;padding:4px 12px;border-radius:3px;cursor:pointer;font-family:inherit;font-size:10px;margin-right:6px}
+#session-log .sl-export:hover{background:#2d6a4f}
 </style>
 </head>
 <body>
@@ -55,7 +73,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <canvas id="mm" width="128" height="112"></canvas>
 <div id="time-ind"></div>
 <div id="ui"><div class="pn" id="st"></div><div class="pn" id="inv"></div></div>
-<div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · TAB: éditeur</div>
+<div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · TAB: éditeur · L: session log</div>
 <div id="shp"><div id="dlg"><div id="dlg-box"><canvas id="dlg-portrait" width="80" height="80"></canvas><div id="dlg-right"><div id="dlg-name"></div><div id="dlg-text"></div></div></div><button id="dlg-next" onclick="advanceDialogue()">...</button></div><h2>🏠 Village</h2><div id="si2"></div><p style="margin-top:6px;font-size:8px;color:#52b788;text-align:center">E / Échap: fermer</p></div>
 <div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button><button class="sb" style="margin-top:4px;background:#3a1010;border-color:#8b0000" onclick="newGame()">Nouvelle partie</button></div>
 <div id="title-screen" style="position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(180deg,#060a0e 0%,#0a1a10 50%,#060a0e 100%);z-index:150;display:flex;flex-direction:column;justify-content:center;align-items:center">
@@ -73,6 +91,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
   <div id="intro-skip" style="color:#52b788;font-family:monospace;font-size:9px;margin-top:20px;opacity:.5">Cliquer ou appuyer Espace pour passer</div>
 </div>
 </div>
+<div id="session-log"><div class="sl-inner" id="sl-content"></div></div>
 <div id="editor">
 <div class="ed-top"><h2>🎮 Éditeur</h2><div><button class="ed-btn" onclick="applyTuning()">Appliquer</button><button class="ed-btn" onclick="resetTuning()">Reset</button><button class="ed-btn" onclick="exportTuning()">Export JSON</button></div></div>
 <div id="ed-content"></div>
@@ -172,6 +191,248 @@ const TUNING = {
   instrumentBagWeight: 2,     // bag space per instrument
 };
 const TUNING_DEFAULT = JSON.parse(JSON.stringify(TUNING));
+
+// ============ SESSION LOG SYSTEM ============
+const SESSION = {
+  startTime: Date.now(),
+  totalCuts: 0,
+  cutsByType: {},          // {tileType: count}
+  totalGoldEarned: 0,
+  totalGoldSpent: 0,
+  deaths: 0,
+  woodLostToDeaths: 0,
+  contractsCompleted: 0,
+  contractsFailed: 0,
+  deepestBiome: 0,
+  axeLevel: 1,
+  bossesDefeated: [],
+  sacredTouched: 0,
+  staminaDumped: 0,        // approximate cumulative stamina consumed
+  villageVisits: 0,
+  sacredLoreRead: 0,
+  enteredBoreal: false,
+  enteredMarecage: false,
+  events: [],              // {t, type, msg, data}
+  snapshots: [],           // {t, g, w, hp, axe, biome, cuts, contracts, corrMax}
+  _lastSnapshotT: 0,
+  _inVillage: false,       // track village entry/exit
+  _prevGold: 0,            // track gold changes
+};
+let _sessionLogOpen = false;
+
+function logEvent(type, msg, data) {
+  const ev = { t: Math.floor(gt), type, msg };
+  if (data) ev.data = data;
+  SESSION.events.push(ev);
+  if (SESSION.events.length > 500) SESSION.events.shift();
+}
+
+function sessionSnapshot() {
+  // Compute corrMax by sampling
+  let corrMax = 0;
+  for (let cy = 0; cy < MH; cy += 4)
+    for (let cx = 0; cx < MW; cx += 4)
+      if (corr[cy] && corr[cy][cx] > corrMax) corrMax = corr[cy][cx];
+  SESSION.snapshots.push({
+    t: Math.floor(gt),
+    g: P.g,
+    w: P.w,
+    hp: P.hp,
+    axe: P.axe,
+    biome: P._deepestBiome,
+    cuts: SESSION.totalCuts,
+    contracts: SESSION.contractsCompleted,
+    corrMax: Math.round(corrMax * 100) / 100
+  });
+}
+
+function _fmtTime(s) {
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m + 'm' + (sec < 10 ? '0' : '') + sec + 's';
+}
+
+function _sparkline(arr, key, w) {
+  if (!arr.length) return '';
+  const vals = arr.map(s => s[key]);
+  const mn = Math.min(...vals), mx = Math.max(...vals);
+  const range = mx - mn || 1;
+  const chars = ' ▁▂▃▄▅▆▇█';
+  let out = '';
+  const step = Math.max(1, Math.floor(arr.length / w));
+  for (let i = 0; i < arr.length; i += step) {
+    const idx = Math.min(8, Math.floor((vals[i] - mn) / range * 8));
+    out += chars[idx];
+  }
+  return out;
+}
+
+function _sessionTags() {
+  const tags = [];
+  if (SESSION.totalCuts > 50) tags.push('chasseur de bois 🪓');
+  else if (SESSION.contractsCompleted > 3 && SESSION.totalCuts <= 50) tags.push('contractant 📜');
+  else tags.push('explorateur 🧭');
+  if (SESSION.deaths === 0) tags.push('prudent ✅');
+  else if (SESSION.deaths <= 2) tags.push('risque maîtrisé ⚠️');
+  else tags.push('téméraire 💀');
+  if (SESSION.deepestBiome >= 2) tags.push('explorateur profond 🌲');
+  if (SESSION.sacredTouched > 0) tags.push('a touché du sacré ⚠️');
+  if (SESSION.bossesDefeated.length > 0) tags.push('boss vaincu 🏆');
+  if (P._debt > 0) tags.push('endetté 💸');
+  return tags;
+}
+
+function _sessionPatterns() {
+  const patterns = [];
+  // Village return frequency
+  const freq = gt > 0 ? (SESSION.villageVisits / (gt / 60)).toFixed(1) : '0';
+  patterns.push(`Retours village : ${SESSION.villageVisits} (${freq}/min)`);
+  // Cut rate
+  const cpm = gt > 0 ? (SESSION.totalCuts / (gt / 60)).toFixed(1) : '0';
+  patterns.push(`Rythme de coupe : ${cpm} coupes/min`);
+  // Top essences
+  const sorted = Object.entries(SESSION.cutsByType).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  if (sorted.length > 0) {
+    const top = sorted.map(([t, c]) => {
+      const ess = ESS[parseInt(t)];
+      return (ess ? ess.name : 'type ' + t) + ' ×' + c;
+    }).join(', ');
+    patterns.push('Essences préférées : ' + top);
+  }
+  // Wood lost to deaths
+  patterns.push(`Bois perdu aux morts : ${SESSION.woodLostToDeaths}`);
+  // Gold sparkline
+  if (SESSION.snapshots.length >= 2) {
+    patterns.push('Courbe d\'or : ' + _sparkline(SESSION.snapshots, 'g', 30));
+  }
+  // Stamina consumed
+  patterns.push(`Stamina consommée : ~${Math.floor(SESSION.staminaDumped)}`);
+  return patterns;
+}
+
+function generateReport() {
+  SESSION.deepestBiome = P._deepestBiome;
+  SESSION.axeLevel = P.axe;
+  SESSION.sacredLoreRead = (P._sacredLore || []).length;
+  SESSION.enteredBoreal = !!P._enteredBoreal;
+  SESSION.enteredMarecage = !!P._enteredMarecage;
+
+  const biomeNames = ['Lisière', 'Forêt Mixte', 'Forêt Ancienne', 'Forêt Primordiale'];
+  let html = '<button class="sl-close" onclick="hideSessionLog()">✕ Fermer (L)</button>';
+  html += '<h2>🌲 SESSION LOG — Proto v13</h2>';
+  html += '<div style="text-align:center;margin-bottom:8px"><button class="sl-export" onclick="exportSessionLog()">📋 Copier JSON</button></div>';
+
+  // Summary metrics
+  html += '<h3>📊 Métriques de session</h3>';
+  const rows = [
+    ['Temps de jeu', _fmtTime(gt)],
+    ['Arbres coupés', SESSION.totalCuts],
+    ['Or gagné (total)', SESSION.totalGoldEarned],
+    ['Or dépensé', SESSION.totalGoldSpent],
+    ['Or actuel', P.g],
+    ['Morts', SESSION.deaths],
+    ['Bois perdu aux morts', SESSION.woodLostToDeaths],
+    ['Contrats complétés', SESSION.contractsCompleted],
+    ['Contrats échoués/abandonnés', SESSION.contractsFailed],
+    ['Niveau de hache', P.axe],
+    ['Biome le plus profond', biomeNames[SESSION.deepestBiome] || SESSION.deepestBiome],
+    ['Zones spéciales', (SESSION.enteredBoreal ? '❄️ Boréale ' : '') + (SESSION.enteredMarecage ? '🌿 Marécage' : '') || '—'],
+    ['Boss vaincus', SESSION.bossesDefeated.length > 0 ? SESSION.bossesDefeated.join(', ') : '—'],
+    ['Stamina consommée', '~' + Math.floor(SESSION.staminaDumped)],
+    ['Visites village', SESSION.villageVisits],
+    ['Fragments de lore lus', SESSION.sacredLoreRead],
+  ];
+  rows.forEach(([l, v]) => { html += `<div class="sl-row"><span class="sl-lbl">${l}</span><span class="sl-val">${v}</span></div>`; });
+
+  // Cuts by type
+  if (Object.keys(SESSION.cutsByType).length > 0) {
+    html += '<h3>🪓 Coupes par essence</h3>';
+    Object.entries(SESSION.cutsByType).sort((a, b) => b[1] - a[1]).forEach(([t, c]) => {
+      const ess = ESS[parseInt(t)];
+      const name = ess ? ess.name : 'type ' + t;
+      html += `<div class="sl-row"><span class="sl-lbl">${name}</span><span class="sl-val">${c}</span></div>`;
+    });
+  }
+
+  // Tags
+  html += '<h3>🏷️ Profil de run</h3>';
+  html += '<div class="sl-tags">';
+  _sessionTags().forEach(t => { html += `<span class="sl-tag">${t}</span>`; });
+  html += '</div>';
+
+  // Patterns
+  html += '<h3>📈 Patterns analysés</h3>';
+  _sessionPatterns().forEach(p => { html += `<div style="font-size:10px;padding:2px 0;color:#8fb">${p}</div>`; });
+
+  // Gold sparkline
+  if (SESSION.snapshots.length >= 2) {
+    html += '<h3>💰 Courbe d\'or</h3>';
+    html += '<div class="sl-spark">' + _sparkline(SESSION.snapshots, 'g', 40) + '</div>';
+    html += '<div style="font-size:8px;color:#52b788">min=' + Math.min(...SESSION.snapshots.map(s => s.g)) + ' max=' + Math.max(...SESSION.snapshots.map(s => s.g)) + '</div>';
+  }
+
+  // Corruption sparkline
+  if (SESSION.snapshots.length >= 2) {
+    html += '<h3>☠️ Courbe corruption max</h3>';
+    html += '<div class="sl-spark">' + _sparkline(SESSION.snapshots, 'corrMax', 40) + '</div>';
+    const lastCorr = SESSION.snapshots[SESSION.snapshots.length - 1].corrMax;
+    html += '<div style="font-size:8px;color:#b266ff">actuel=' + lastCorr + '</div>';
+  }
+
+  // Timeline (newest first)
+  html += '<h3>📜 Timeline d\'événements (' + SESSION.events.length + ')</h3>';
+  const evCopy = SESSION.events.slice().reverse();
+  evCopy.forEach(ev => {
+    html += `<div class="sl-event"><span class="sl-etime">${_fmtTime(ev.t)}</span><span class="sl-etype">${ev.type}</span>${ev.msg}</div>`;
+  });
+
+  // Snapshots table (last 10)
+  if (SESSION.snapshots.length > 0) {
+    html += '<h3>📸 Snapshots récents</h3>';
+    html += '<div style="font-size:9px;overflow-x:auto"><table style="border-collapse:collapse;width:100%"><tr style="color:#52b788;border-bottom:1px solid #2d6a4f"><th>t</th><th>or</th><th>bois</th><th>hp</th><th>hache</th><th>biome</th><th>coupes</th><th>contrats</th><th>corrMax</th></tr>';
+    SESSION.snapshots.slice(-10).forEach(s => {
+      html += `<tr style="border-bottom:1px solid rgba(27,67,50,.2)"><td>${_fmtTime(s.t)}</td><td>${s.g}</td><td>${s.w}</td><td>${s.hp}</td><td>${s.axe}</td><td>${s.biome}</td><td>${s.cuts}</td><td>${s.contracts}</td><td>${s.corrMax}</td></tr>`;
+    });
+    html += '</table></div>';
+  }
+
+  return html;
+}
+
+function showSessionLog() {
+  _sessionLogOpen = true;
+  document.getElementById('sl-content').innerHTML = generateReport();
+  document.getElementById('session-log').style.display = 'block';
+}
+
+function hideSessionLog() {
+  _sessionLogOpen = false;
+  document.getElementById('session-log').style.display = 'none';
+}
+
+function exportSessionLog() {
+  SESSION.deepestBiome = P._deepestBiome;
+  SESSION.axeLevel = P.axe;
+  const json = JSON.stringify({
+    meta: { version: 'v13', time: _fmtTime(gt), seed: 42, date: new Date().toISOString() },
+    summary: {
+      duration: Math.floor(gt),
+      totalCuts: SESSION.totalCuts,
+      totalGoldEarned: SESSION.totalGoldEarned,
+      totalGoldSpent: SESSION.totalGoldSpent,
+      deaths: SESSION.deaths,
+      contractsCompleted: SESSION.contractsCompleted,
+      deepestBiome: SESSION.deepestBiome,
+      axeLevel: P.axe,
+      currentGold: P.g
+    },
+    cutsByType: SESSION.cutsByType,
+    events: SESSION.events,
+    snapshots: SESSION.snapshots,
+    playerState: { hp: P.hp, axe: P.axe, g: P.g, debt: P._debt || 0, enteredBoreal: !!P._enteredBoreal, enteredMarecage: !!P._enteredMarecage }
+  }, null, 2);
+  navigator.clipboard.writeText(json).then(() => ft2(P.x, P.y, '📋 JSON copié!', '#52b788'));
+}
+
 const TUNING_META = {
   'corrMinCluster': {min:2,max:12,step:1,cat:'Corruption',label:'Seuil cluster (stumps)'},
   'corrSpreadRate': {min:0.0005,max:0.02,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
@@ -479,7 +740,7 @@ function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap+(P.seeds||0)*
 function invFree(){return P.invCap-invUsed()}
 let cam={x:0,y:0},smCam={x:0,y:0};
 const K={};
-document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()}});
+document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM','KeyL'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()};if(e.code==='KeyL'&&!e.repeat){if(_sessionLogOpen)hideSessionLog();else showSessionLog()}});
 document.addEventListener('keyup',e=>{K[e.code]=false});
 
 // ============ AUDIO SYSTEM (8-bit chiptune) ============
@@ -3995,7 +4256,7 @@ function hitSacredMiniBoss(px2,py2,pow){
         // Drop spiritual essences
         P.essences=(P.essences||0)+3;
         ft2(b.x,b.y-1,'✨+3 Essences spirituelles','#b266ff');
-        P.g+=30;ft2(b.x,b.y,'💰+30','#ffd700');
+        P.g+=30;SESSION.totalGoldEarned+=30;ft2(b.x,b.y,'💰+30','#ffd700');
       }
     }
   });
@@ -4178,7 +4439,7 @@ function hurtP(dmg,iv,ht,shk,col,n,attacker){
     ft2(P.x,P.y-1,'🛡️ Contre!','#ffd700');sfxHit();
     return;
   }
-  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block'}
+  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block';SESSION.deaths++;SESSION.woodLostToDeaths+=P.w;const biome=P.y<40?3:P.y<100?2:P.y<170?1:0;logEvent('DEATH',`Mort (biome ${biome}, bois perdu: ${P.w}, or: ${P.g})`,{biome,woodLost:P.w,gold:P.g})}
 }
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
@@ -4583,7 +4844,7 @@ function updP2(d){
         if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&(map[ny2][nx2]===TT.TJ||map[ny2][nx2]===TT.ARBRE_CHANT)){
           const lore=getSacredLore(nx2,ny2);
           if(lore){
-            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();addComprehension(4);if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
+            if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();addComprehension(4);SESSION.sacredTouched++;if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
             shopOn=true;curShop='SACRED';
             document.getElementById('shp').style.display='block';
             document.querySelector('#shp h2').textContent='🌳 Arbre Sacré';
@@ -4686,7 +4947,7 @@ function updP2(d){
   if(K.ArrowRight||K.KeyD){mx=1;P.f=1}
   if(mx&&my){mx*=.707;my*=.707}
   let spd=P.spd;P.dt=Math.max(0,P.dt-d);P.dc=Math.max(0,P.dc-d);
-  if(K.KeyC&&P._hasDash&&P.sta>TUNING.dashStaCost&&P.dc<=0&&(mx||my)){K.KeyC=false;P.dc=.5;P.dt=.2;P.sta-=TUNING.dashStaCost}
+  if(K.KeyC&&P._hasDash&&P.sta>TUNING.dashStaCost&&P.dc<=0&&(mx||my)){K.KeyC=false;P.dc=.5;P.dt=.2;P.sta-=TUNING.dashStaCost;SESSION.staminaDumped+=TUNING.dashStaCost}
   if(P.dt>0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult}
   if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
@@ -4706,7 +4967,7 @@ function updP2(d){
     // --- Dash attack (C held + Space) ---
     const isDashAttack=P._hasSkillDashAttack&&K.KeyC&&(mx||my);
     P._lastSwingT=gt;
-    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;P.sw=1;sfxChop();
+    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;SESSION.staminaDumped+=TUNING.cutStaCost;P.sw=1;sfxChop();
     // Counter-attack window
     if(P._hasSkillCounter) P._counterWindow=0.3;
     // Scare wildlife on cut
@@ -4715,14 +4976,14 @@ function updP2(d){
     const tx=Math.floor(P.x+dd[0]),ty=Math.floor(P.y+dd[1]);
     if(isCircular){
       // CIRCULAR ATTACK: hit all enemies in 2.5 tile radius, costs extra stamina
-      P.sta-=15;shake=.3;sp(P.x,P.y,'#cc4444',12);ft2(P.x,P.y-1,'⚔️ Circulaire!','#cc4444');
+      P.sta-=15;SESSION.staminaDumped+=15;shake=.3;sp(P.x,P.y,'#cc4444',12);ft2(P.x,P.y-1,'⚔️ Circulaire!','#cc4444');
       const cR=2.5,cPow=Math.ceil(P.pow*1.5);
       ents.forEach(e=>{const di=Math.sqrt((e.x-P.x)**2+(e.y-P.y)**2);if(di<cR){e.hp-=cPow;e.ht=.3;sp(e.x,e.y,'#ff4444',6);sfxHit()}});
       wolves.forEach(w=>{const di=Math.sqrt((w.x-P.x)**2+(w.y-P.y)**2);if(di<cR){w.hp-=cPow;w.ht=.3;sp(w.x,w.y,'#ff4444',6)}});
       hitSacredMiniBoss(P.x,P.y,cPow);
     }else if(isDashAttack){
       // DASH ATTACK: lunge forward 3 tiles, hit everything in path
-      P.sta-=20;const daPow=Math.ceil(P.pow*1.2);
+      P.sta-=20;SESSION.staminaDumped+=20;const daPow=Math.ceil(P.pow*1.2);
       const ddx=mx/(Math.abs(mx)+Math.abs(my)),ddy=my/(Math.abs(mx)+Math.abs(my));
       for(let step=0;step<6;step++){
         const sx=P.x+ddx*step*0.5,sy=P.y+ddy*step*0.5;
@@ -4742,10 +5003,10 @@ function updP2(d){
     // Sacred mini-boss hit detection
     hitSacredMiniBoss(P.x+dd[0]*.5,P.y+dd[1]*.5,P.pow);
     // Lateral boss hit detection
-    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100;addMaitrise(8)}}}
-    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100;addMaitrise(8)}}}
+    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Arbre-Pieuvre');logEvent('BOSS','Arbre-Pieuvre vaincu')}}}
+    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Ours Ancestral');logEvent('BOSS','Ours Ancestral vaincu')}}}
     // Guardian hit detection
-    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;P._guardianFought=true;addMaitrise(10);ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2}}}
+    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;P._guardianFought=true;addMaitrise(10);ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2;SESSION.bossesDefeated.push('Gardien');logEvent('BOSS','Gardien vaincu')}}}
     if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&isT(map[ty][tx])){
       const tile=map[ty][tx],ess=ESS[tile];if(!ess)return;
       // === PRIMORDIAL TREE SPECIAL HANDLING ===
@@ -4846,7 +5107,7 @@ function updP2(d){
         if(regrowMap[ty]?._planted){
           regrowMap[ty][tx]={ess:tile,time:gt+300}; // ~1 day/night cycle (300s)
         }
-        map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();
+        map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();SESSION.totalCuts++;SESSION.cutsByType[tile]=(SESSION.cutsByType[tile]||0)+1;
         // Scoring: Destruction +1 per tree, +5 for sacred
         addDestruction(ess.sacred?5:1);
         // Check luthier arrival on rare wood
@@ -4864,11 +5125,11 @@ function updP2(d){
   }
   // Track deepest biome reached
   const prevBiome=P._deepestBiome;
-  if(P.y<40&&P._deepestBiome<3){P._deepestBiome=3;ft2(P.x,P.y-1,'🌲 Forêt Primordiale','#b266ff')}
-  else if(P.y<100&&P._deepestBiome<2){P._deepestBiome=2;ft2(P.x,P.y-1,'🌲 Forêt Ancienne','#1a4a28')}
-  else if(P.y<170&&P._deepestBiome<1){P._deepestBiome=1;ft2(P.x,P.y-1,'🌲 Forêt Mixte','#2d6a4f')}
-  if(P.x<86&&!P._enteredBoreal){P._enteredBoreal=true;ft2(P.x,P.y-1,'\u2744\ufe0f For\u00eat Bor\u00e9ale','#6a8aaa');shake=.2}
-  if(P.x>170&&!P._enteredMarecage){P._enteredMarecage=true;ft2(P.x,P.y-1,'\ud83c\udf3f Mar\u00e9cage','#2a6a4a');shake=.2}
+  if(P.y<40&&P._deepestBiome<3){P._deepestBiome=3;ft2(P.x,P.y-1,'🌲 Forêt Primordiale','#b266ff');logEvent('BIOME','Forêt Primordiale',{biome:3})}
+  else if(P.y<100&&P._deepestBiome<2){P._deepestBiome=2;ft2(P.x,P.y-1,'🌲 Forêt Ancienne','#1a4a28');logEvent('BIOME','Forêt Ancienne',{biome:2})}
+  else if(P.y<170&&P._deepestBiome<1){P._deepestBiome=1;ft2(P.x,P.y-1,'🌲 Forêt Mixte','#2d6a4f');logEvent('BIOME','Forêt Mixte',{biome:1})}
+  if(P.x<86&&!P._enteredBoreal){P._enteredBoreal=true;ft2(P.x,P.y-1,'\u2744\ufe0f For\u00eat Bor\u00e9ale','#6a8aaa');shake=.2;logEvent('BIOME','Forêt Boréale',{zone:'boreal'})}
+  if(P.x>170&&!P._enteredMarecage){P._enteredMarecage=true;ft2(P.x,P.y-1,'\ud83c\udf3f Mar\u00e9cage','#2a6a4a');shake=.2;logEvent('BIOME','Marécage',{zone:'marecage'})}
 }
 // ============ CONTRACT SYSTEM ============
 const CONTRACT_TYPES=[TT.NOI,TT.AUL,TT.BOU,TT.ERA,TT.PIN,TT.FRE,TT.CHE,TT.HET,TT.IFS,TT.TIL,TT.SEQ,TT.PET];
@@ -4991,7 +5252,7 @@ function updShop(){
       {n:`🔥 Acheter 3 torches (stock: ${P._torches||0})`,c:5,a:()=>{P._torches=(P._torches||0)+3;ft2(P.x,P.y,'🔥+3 Torches','#e9c46a');updShop()}},
       {n:P._torchActive?'🔥 Éteindre la torche':'🔥 Allumer une torche',c:0,a:()=>{if(!P._torchActive&&(P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}else{ft2(P.x,P.y,'Pas de torches!','#e74c3c')};updShop()}},
       {n:`📦 Sac +${TUNING.bagUpgradeAmount} (${P.invCap}→${P.invCap+TUNING.bagUpgradeAmount})`,c:P.invCap<=30?TUNING.bagUpgradeCost1:P.invCap<=45?TUNING.bagUpgradeCost2:TUNING.bagUpgradeCost3,a:()=>{P.invCap+=TUNING.bagUpgradeAmount;ft2(P.x,P.y,`📦+${TUNING.bagUpgradeAmount}`,'#8B6914')}},
-      {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellTaverne} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellTaverne;P.g+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
+      {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellTaverne} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellTaverne;P.g+=g;SESSION.totalGoldEarned+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
     ];
   }else if(t===TT.FORGE){
     // Forgeron: axes + stamina + repair
@@ -5006,7 +5267,7 @@ function updShop(){
       {n:'── ENTRETIEN ──',c:9999,a:()=>{}},
       {n:`🔧 Réparer hache (${durPct}% → 100%) — ${repCost} or`,c:P._axeDur>=maxDur?9999:repCost,a:()=>{P._axeDur=maxDur;P._axeMaxDur=maxDur;P._repairCount=(P._repairCount||0)+1;ft2(P.x,P.y,'🔧 Comme neuve!','#e9c46a');updShop()}},
       {n:'── PUISSANCE (niveau de hache) ──',c:9999,a:()=>{}},
-      {n:`🪓 Hache Niv.${P.axe+1} (dég: ${P.axe}→${P.axe+1})`,c:costs[Math.min(P.axe-1,2)]||999,a:()=>{P.axe++;P.pow=P.axe;ft2(P.x,P.y,`🪓 Niv.${P.axe}`,'#ccc');updShop()}},
+      {n:`🪓 Hache Niv.${P.axe+1} (dég: ${P.axe}→${P.axe+1})`,c:costs[Math.min(P.axe-1,2)]||999,a:()=>{P.axe++;P.pow=P.axe;ft2(P.x,P.y,`🪓 Niv.${P.axe}`,'#ccc');logEvent('AXEUP',`Hache Niv.${P.axe}`,{level:P.axe,goldLeft:P.g});updShop()}},
       {n:'── DURABILITÉ ──',c:9999,a:()=>{}},
       {n:`🔨 Renforcer: durabilité +20 (${maxDur}→${maxDur+20})`,c:durLvl>=5?9999:durUpCost,a:()=>{P._axeDurLevel=(P._axeDurLevel||0)+1;const nd=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1)+(P._axeDurLevel)*20;P._axeMaxDur=nd;P._axeDur=nd;ft2(P.x,P.y,`🔨 Durabilité: ${nd}`,'#e9c46a');updShop()}},
       {n:`   Durabilité: ${maxDur} coups (niv.${durLvl}/5)`,c:9999,a:()=>{}},
@@ -5030,7 +5291,7 @@ function updShop(){
       encUnlocked
         ? {n:`🌀 Encens ×1 (stock: ${P._encensStock||0})`,c:20,a:()=>{P._encensStock=(P._encensStock||0)+1;ft2(P.x,P.y,'🌀+1','#74c69d')}}
         : {n:`🌀 Encens — 🔒 ${P.mushrooms}/${TUNING.mushsForEncens} champignons`,c:9999,a:()=>{}},
-      {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellChamane} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellChamane;P.g+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
+      {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellChamane} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellChamane;P.g+=g;SESSION.totalGoldEarned+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
       {n:`   🌿 Herbes: ${P.herbs} · 🍄 Champignons: ${P.mushrooms}`,c:9999,a:()=>{}},
       {n:`   ✨ Essences: ${P.essences||0} · 🌱 Plantées: ${P._saplings||0}`,c:9999,a:()=>{}},
       {n:`   🌀 Rituels: ${P._ritualsPerformed||0} · 🌿 Pureté: ${P._purificationPct||0}%`,c:9999,a:()=>{}},
@@ -5161,6 +5422,7 @@ function updShop(){
         P.axe=5;P.pow=5;
         P._axeDur=200;P._axeMaxDur=200;
         addMaitrise(10); // legendary axe = major mastery
+        logEvent('AXEUP','Hache Légendaire restaurée (Niv.5)',{level:5,legendary:true});
         ft2(P.x,P.y,'⚔️ HACHE LÉGENDAIRE RESTAURÉE !','#ffd700');
         sfxLore();shake=1;sp(P.x,P.y,'#ffd700',25);
         updShop();
@@ -5311,7 +5573,7 @@ function updShop(){
     items=[];
     
     // 1. Basic sell — always available
-    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;sfxSell();ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
+    items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;SESSION.totalGoldEarned+=baseVal;sfxSell();ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
     
     // 2. Contract — timed specific wood request
     if(P._contract){
@@ -5334,7 +5596,7 @@ function updShop(){
         if(held>0){
           const delivered=Math.min(held,ct.amount);
           const pay=delivered*Math.floor(ct.pricePerUnit*priceMult);
-          P.g+=pay;
+          P.g+=pay;SESSION.totalGoldEarned+=pay;
           P.woodByType[ct.type]-=delivered;
           P.w-=delivered;
           P.wv=Math.max(0,(P.wv||0)-delivered*(ess?.gold||1));
@@ -5343,7 +5605,7 @@ function updShop(){
             ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
             addDestruction(3); // completing contracts for the Enterprise = destruction
             P._contract=null;
-            P._contractsDone=(P._contractsDone||0)+1;
+            P._contractsDone=(P._contractsDone||0)+1;SESSION.contractsCompleted++;logEvent('CONTRACT',`Contrat #${P._contractsDone} complété`,{total:P._contractsDone});
             generateContract(); // new contract immediately
           }else{
             ct.amount-=delivered;
@@ -5351,7 +5613,7 @@ function updShop(){
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;generateContract();ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;logEvent('CONTRACT','Contrat abandonné');generateContract();ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
     }else{
       // No contract — generate immediately
       generateContract();
@@ -5372,7 +5634,7 @@ function updShop(){
       items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractEast='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Arbre-Pieuvre','#ffd700');ft2(P.x,P.y-1,'L\'est de la forêt vous attend...','#aaa')}});
       items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractEast='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric fronce les sourcils.','#e74c3c')}});
     }else if(P._bossContractEast==='accepted'&&bossEast&&bossEast.defeated){
-      items.push({n:'🏆 Réclamer: Arbre-Pieuvre éliminé (500 or)',c:0,a:()=>{P._bossContractEast='done';P.g+=500;addDestruction(8);ft2(P.x,P.y,'💰+500','#ffd700');sfxContract()}});
+      items.push({n:'🏆 Réclamer: Arbre-Pieuvre éliminé (500 or)',c:0,a:()=>{P._bossContractEast='done';P.g+=500;SESSION.totalGoldEarned+=500;addDestruction(8);ft2(P.x,P.y,'💰+500','#ffd700');sfxContract()}});
     }
     if(P._bossContractWest==='offered'){
       items.push({n:'═══ CONTRAT SPÉCIAL ═══',c:9999,a:()=>{}});
@@ -5381,7 +5643,7 @@ function updShop(){
       items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractWest='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Ours Ancestral','#ffd700');ft2(P.x,P.y-1,'L\'ouest de la forêt vous attend...','#aaa')}});
       items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractWest='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric serre les dents.','#e74c3c')}});
     }else if(P._bossContractWest==='accepted'&&bossWest&&bossWest.defeated){
-      items.push({n:'🏆 Réclamer: Ours Ancestral éliminé (600 or)',c:0,a:()=>{P._bossContractWest='done';P.g+=600;addDestruction(8);ft2(P.x,P.y,'💰+600','#ffd700');sfxContract()}});
+      items.push({n:'🏆 Réclamer: Ours Ancestral éliminé (600 or)',c:0,a:()=>{P._bossContractWest='done';P.g+=600;SESSION.totalGoldEarned+=600;addDestruction(8);ft2(P.x,P.y,'💰+600','#ffd700');sfxContract()}});
     }
     // 5. Final Contract (refusable — cut the Primordial Tree)
     if(P._finalContractState==='offered'){
@@ -5467,7 +5729,7 @@ function updShop(){
     else if(isContract)lbl='Signer';
     else lbl=it.c>=9999?'—':it.c+' or';
     d2.innerHTML=`<span>${it.n}</span><button class="sb" ${ok?'':'disabled'}>${lbl}</button>`;
-    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell)P.g-=it.c;it.a();updShop()};
+    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell){P.g-=it.c;SESSION.totalGoldSpent+=it.c}it.a();updShop()};
     co.appendChild(d2);
   });
 }
@@ -7556,6 +7818,12 @@ function loop(ts){
   _saveTimer+=d;if(_saveTimer>60&&!dead&&!endingActive){_saveTimer=0;saveGame()}
   if(endingActive)updateEnding();
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
+  // Session log: snapshot every 30s
+  if(gt-SESSION._lastSnapshotT>=30&&!dead){SESSION._lastSnapshotT=gt;sessionSnapshot()}
+  // Session log: village visit detection (y > 200 = village zone)
+  const _nowInVillage=P.y>200;
+  if(_nowInVillage&&!SESSION._inVillage){SESSION._inVillage=true;SESSION.villageVisits++;logEvent('VILLAGE',`Visite village #${SESSION.villageVisits}`,{visit:SESSION.villageVisits,gold:P.g,wood:P.w})}
+  if(!_nowInVillage&&SESSION._inVillage){SESSION._inVillage=false}
 
   // Target camera
   cam.x=P.x-VW/2;cam.y=P.y-VH/2;
