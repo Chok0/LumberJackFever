@@ -6595,10 +6595,31 @@ function dFX(){
 }
 
 // ============ MINIMAP ============
+// Fog of war: track explored tiles (revealed by player proximity or purchased maps)
+let _mmRevealed=null; // 2D boolean array, lazily initialized
+function mmReveal(){
+  if(!_mmRevealed){_mmRevealed=Array.from({length:MH},()=>new Uint8Array(MW))}
+  // Reveal tiles around player (radius ~12 tiles)
+  const px=Math.floor(P.x),py=Math.floor(P.y),r=12;
+  for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    const nx=px+dx,ny=py+dy;
+    if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&dx*dx+dy*dy<=r*r)_mmRevealed[ny][nx]=1;
+  }
+  // Purchased maps reveal entire biome bands
+  if(P._mapLisiere)for(let y=170;y<MH;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+  if(P._mapMixte)for(let y=100;y<170;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+  if(P._mapAncienne)for(let y=40;y<100;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+  if(P._mapPrimordiale)for(let y=0;y<40;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+  // Village always revealed
+  for(let y=200;y<MH;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+}
 function dMM(){
+  mmReveal();
   const mc=document.getElementById('mm'),mx=mc.getContext('2d');
-  mx.fillStyle='#080c10';mx.fillRect(0,0,96,112);
+  mx.fillStyle='#080c10';mx.fillRect(0,0,128,112);
+  const pw=Math.max(1,Math.ceil(128/MW)),ph=Math.max(1,Math.ceil(112/MH));
   for(let y=0;y<MH;y++)for(let x=0;x<MW;x++){
+    if(!_mmRevealed||!_mmRevealed[y][x]){continue} // fog of war — skip unrevealed
     const t=map[y][x],cr=corr[y]?.[x]||0;
     const ess=ESS[t];
     let c='#2d6a4f';
