@@ -120,7 +120,7 @@ const TUNING = {
   axeDurPerLevel: 25,       // +dur per axe level
   axeRepairCost: 5,         // gold to repair (was 15)
   // -- Economy --
-  baseBagSize: 30,
+  baseBagSize: 15,
   bagUpgradeAmount: 15,
   bagUpgradeCost1: 40,
   bagUpgradeCost2: 100,
@@ -629,7 +629,7 @@ let regrowMap=[]; // tracks stumps that will regrow: {ess, time}
 let wolves=[]; // nocturnal wolf packs: {x,y,hp,mhp,spd,dmg,ht,ar,fr,packId,fleeDir}
 let _wolfPacks=0,_wolfSpawnT=0; // pack count & spawn cooldown timer
 let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
-  invCap:30,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
+  invCap:15,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
   herbs:0,mushrooms:0, // collected from clearings
   chestWood:0,chestSap:0,chestWoodByType:{}, // stored in house chest
   woodByType:{}, // track wood per essence: {tileType: count}
@@ -2546,11 +2546,12 @@ const SACRED_LORE = [
 function getSacredLore(wx,wy){
   // Determine biome of this sacred tree
   const biome=wy<40?3:wy<100?2:wy<170?1:0;
-  // Use position as seed to pick consistent lore
+  // Return the first unread lore entry for this biome
   const lorePool=SACRED_LORE.filter(l=>l.biome===biome);
   if(lorePool.length===0)return null;
-  const idx=(wx*7+wy*13)%lorePool.length;
-  return lorePool[idx];
+  const unread=lorePool.filter(l=>!P._sacredLore.includes(l.id));
+  if(unread.length===0)return null; // all lore in this biome already read
+  return unread[0];
 }
 
 // ============ TAVERN RUMORS ============
@@ -4849,6 +4850,7 @@ function updP2(d){
         const nx2=px2+dx,ny2=py2+dy;
         if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&(map[ny2][nx2]===TT.TJ||map[ny2][nx2]===TT.ARBRE_CHANT)){
           const lore=getSacredLore(nx2,ny2);
+          if(!lore){ft2(P.x,P.y-1,'L\'arbre murmure... mais tu connais déjà ses secrets.','#DAA520');return}
           if(lore){
             if(!P._sacredLore.includes(lore.id)){P._sacredLore.push(lore.id);sfxLore();addComprehension(4);SESSION.sacredTouched++;if(!P._firstSacredTree){P._firstSacredTree=true;ft2(P.x,P.y-1.5,'Un anthropologue a rejoint le village!','#daa520')}}
             shopOn=true;curShop='SACRED';
@@ -5256,7 +5258,7 @@ function updShop(){
       {n:'🍖 Repas (soins max)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️','#e74c3c')}},
       {n:`🔥 Acheter 3 torches (stock: ${P._torches||0})`,c:5,a:()=>{P._torches=(P._torches||0)+3;ft2(P.x,P.y,'🔥+3 Torches','#e9c46a');updShop()}},
       {n:P._torchActive?'🔥 Éteindre la torche':'🔥 Allumer une torche',c:0,a:()=>{if(!P._torchActive&&(P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}else{ft2(P.x,P.y,'Pas de torches!','#e74c3c')};updShop()}},
-      {n:`📦 Sac +${TUNING.bagUpgradeAmount} (${P.invCap}→${P.invCap+TUNING.bagUpgradeAmount})`,c:P.invCap<=30?TUNING.bagUpgradeCost1:P.invCap<=45?TUNING.bagUpgradeCost2:TUNING.bagUpgradeCost3,a:()=>{P.invCap+=TUNING.bagUpgradeAmount;ft2(P.x,P.y,`📦+${TUNING.bagUpgradeAmount}`,'#8B6914')}},
+      {n:`📦 Sac +${TUNING.bagUpgradeAmount} (${P.invCap}→${P.invCap+TUNING.bagUpgradeAmount})`,c:P.invCap<30?TUNING.bagUpgradeCost1:P.invCap<45?TUNING.bagUpgradeCost2:TUNING.bagUpgradeCost3,a:()=>{P.invCap+=TUNING.bagUpgradeAmount;ft2(P.x,P.y,`📦+${TUNING.bagUpgradeAmount}`,'#8B6914')}},
       {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellTaverne} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellTaverne;P.g+=g;SESSION.totalGoldEarned+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
     ];
   }else if(t===TT.FORGE){
