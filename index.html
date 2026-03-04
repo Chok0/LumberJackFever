@@ -635,6 +635,7 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   woodByType:{}, // track wood per essence: {tileType: count}
   _contract:null, // {type,name,amount,pricePerUnit,deadline,acceptedAt}
   _contractsDone:0, // contracts completed — drives progression
+  _lastContractType:0, // last completed contract wood type — anti-repeat
   _sacredLore:[], // IDs of lore fragments already read
   _introSeen:false, // has seen intro cinematic
   _grandparentTalked:0, // times talked to grandparent
@@ -2453,8 +2454,8 @@ const NPC_DATA = {
     visited: false,
   },
   [TT.HERM_T]: {
-    name: 'L\'Ancien',
-    title: '🎵 Ermite Triste',
+    name: 'Théodore',
+    title: '🪓 Ancien Maître-Artisan',
     borderCol: '#6a6a8a',
     visited: false,
   },
@@ -3459,8 +3460,8 @@ function getDialogue(npcType){
       lines.push("Plantez-le, laissez-le grandir, puis... coupez-le. Pour la musique.");
     }else if(P._luthierMasterpiece){
       lines.push("L'instrument est terminé. Un chef-d'œuvre absolu.");
-      lines.push("Mon maître... il saurait l'apprécier. Si seulement il pouvait l'entendre...");
-      lines.push("On dit qu'un vieil ermite vit dans la forêt primordiale...");
+      lines.push("Mon maître, Théodore... le grand sculpteur de bois. C'est lui qui m'a tout appris.");
+      lines.push("Il vit en ermite dans la forêt primordiale. Si seulement il pouvait entendre cet instrument...");
     }else{
       if(hasRare){
         lines.push("Du bois rare ! Montrez-moi ça...");
@@ -3519,7 +3520,7 @@ function getDialogue(npcType){
       lines.push("Reviens me voir si tu veux des graines !");
     }
   }else if(npcType === TT.HERM_T){
-    // Ermite Triste
+    // Théodore — Ancien Maître-Artisan (NOT a luthier — he was a master woodworker who TAUGHT Lucien)
     const v=NPC_VISITS[TT.HERM_T]||0;
     P._tristeMet=true;addComprehension(3);
     if(v===0){
@@ -3527,28 +3528,29 @@ function getDialogue(npcType){
       lines.push("*silence prolongé*");
       lines.push("Va-t'en.");
       lines.push("... Non. Reste. Ça fait longtemps que personne...");
-      lines.push("J'étais luthier. Le meilleur. Avant.");
-      lines.push("J'ai essayé de fabriquer un instrument en bois sacré. J'ai échoué. J'ai tout brisé.");
+      lines.push("Je suis Théodore. J'étais maître-artisan du bois. Le meilleur sculpteur de la forêt.");
+      lines.push("J'ai eu un apprenti, Lucien. Je lui ai appris à travailler le bois. Il en a fait des instruments.");
+      lines.push("Moi, j'ai voulu sculpter le bois sacré. Créer une œuvre parfaite. J'ai échoué. J'ai tout brisé.");
     }else if(P._brokenAxeItem&&!P._tristeLiberated){
       lines.push("*regarde la hache brisée*");
       lines.push("... Je connais cette hache. La Hache Légendaire.");
       lines.push("La lame est en bois-titane. Pas du métal. Du BOIS aussi dur que le titane.");
       lines.push("J'ai un morceau de bois-titane. Le seul qui reste au monde.");
-      lines.push("Je pourrais la réparer. Mais... je n'ai plus la volonté.");
-      lines.push("Je veux entendre quelque chose de beau. Quelque chose qui me rappelle pourquoi...");
+      lines.push("Je pourrais la réparer — la sculpture du bois, c'est mon art.");
+      lines.push("Mais... je n'ai plus la volonté. Je veux entendre quelque chose de beau d'abord.");
     }else if(P._luthierMasterpiece&&!P._tristeLiberated){
       lines.push("*entend l'instrument*");
       lines.push("... Ce son. Ce style. C'est...");
-      lines.push("Mon élève. Il a réussi là où j'ai échoué.");
+      lines.push("Lucien ! Mon apprenti ! Il a créé cet instrument ?");
       lines.push("*larmes silencieuses*");
-      lines.push("Mon héritage n'est pas mort. Mes enseignements ont porté fruit.");
-      lines.push("Donne-moi la hache. Je vais la restaurer. Avec mon bois-titane.");
+      lines.push("Ce que je lui ai enseigné du bois... il l'a transformé en musique.");
+      lines.push("Donne-moi la hache. Je vais la restaurer. La sculpture, c'est ce que JE sais faire.");
     }else if(P._tristeLiberated){
       lines.push("*sourire fragile*");
       lines.push("La Hache Légendaire est restaurée. Prends-la.");
       lines.push("Le bois-titane chante quand tu coupes. Écoute-le.");
     }else{
-      const pool3=["Le silence est mon seul compagnon.","J'ai passé des années à chercher le bois parfait. J'ai trouvé le vide.","Mon élève... je me demande s'il fabrique toujours.","Le bois-titane. Un rêve pétrifié."];
+      const pool3=["Le silence est mon seul compagnon.","J'ai passé des années à chercher le bois parfait. J'ai trouvé le vide.","Lucien, mon apprenti... je me demande s'il fabrique toujours ses instruments.","Le bois-titane. Un rêve pétrifié."];
       lines.push(pool3[v%pool3.length]);
     }
   }
@@ -4909,6 +4911,8 @@ function updP2(d){
           return;
         }
       }
+      // Check for buildings FIRST (castor near river must take priority)
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
       // Check for River interaction (build raft / build bridge)
       for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
         const nx2=px2+dx,ny2=py2+dy;
@@ -4940,8 +4944,6 @@ function updP2(d){
           return;
         }
       }
-      // Then check for buildings
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
     }
   }
   // Inventory toggle (I key)
@@ -5178,17 +5180,17 @@ function generateContract(){
   if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial: apprendre à couper
   }else if(ci===1){ type=TT.AUL; amount=5;  // nouvelle essence dès le 2e contrat
   }else if(ci===2){ type=TT.BOU; amount=5;  // 3e essence
-  }else if(ci===3){ type=TT.NOI; amount=10; // retour au noisetier, volume plus gros
-  }else if(ci===4){ type=TT.ERA; amount=5;  // intro érable (hp:5, plus long à couper)
-  }else if(ci===5){ type=TT.AUL; amount=12; // volume croissant
-  }else if(ci===6){ type=TT.BOU; amount=15;
-  }else if(ci===7){ type=TT.NOI; amount=20; // premier gros contrat (sac plein)
-  }else if(ci===8){ type=TT.ERA; amount=10; // érable volume moyen
-  }else if(ci===9){ type=TT.BOU; amount=25; // forces bag upgrade 30→45
+  }else if(ci===3){ type=TT.ERA; amount=5;  // intro érable (hp:5, plus long à couper)
+  }else if(ci===4){ type=TT.NOI; amount=10; // retour au noisetier, volume plus gros
+  }else if(ci===5){ type=TT.AUL; amount=10; // volume croissant
+  }else if(ci===6){ type=TT.ERA; amount=8;  // érable moyen
+  }else if(ci===7){ type=TT.BOU; amount=12; // bouleau moyen
+  }else if(ci===8){ type=TT.NOI; amount=15; // premier gros contrat (sac plein)
+  }else if(ci===9){ type=TT.AUL; amount=20; // forces bag upgrade
   // === PHASE 2: Volumes croissants, push nord ===
   }else if(ci===10){ type=TT.ERA; amount=15;
-  }else if(ci===11){ type=TT.AUL; amount=30;
-  }else if(ci===12){ type=TT.ERA; amount=20;
+  }else if(ci===11){ type=TT.BOU; amount=20;
+  }else if(ci===12){ type=TT.NOI; amount=25;
   // === PHASE 4: Pin/Frêne — transition, push toward mixte ===
   }else if(ci===13){ type=TT.PIN; amount=10;
   }else if(ci===14){ type=TT.FRE; amount=15;
@@ -5208,20 +5210,28 @@ function generateContract(){
     type=pool[ci%pool.length];
     amount=8+Math.floor((ci-22)*1.5);
   }
-  // Smart contract adjustment — favor what the player already carries
+  // Smart contract adjustment — favor what the player already carries (but avoid repeating last type)
   const held=(P.woodByType&&P.woodByType[type])||0;
   const onMap=countTreeType(type);
   const axeLvl=P.axe||1;
+  const lastType=P._lastContractType||0;
   // If player has significant stock of a different wood type, offer that instead
+  // But never pick the same type as the last completed contract
   if(held<Math.ceil(amount/3)&&P.woodByType){
     const carried=Object.entries(P.woodByType)
-      .filter(([t,c])=>c>=3&&parseInt(t)!==type&&ESS[parseInt(t)]&&ESS[parseInt(t)].minAxe<=axeLvl)
+      .filter(([t,c])=>c>=3&&parseInt(t)!==type&&parseInt(t)!==lastType&&ESS[parseInt(t)]&&ESS[parseInt(t)].minAxe<=axeLvl)
       .sort((a,b)=>b[1]-a[1]);
     if(carried.length>0){
       const best=parseInt(carried[0][0]);
       type=best;
       amount=Math.max(3,Math.min(amount,carried[0][1]+Math.ceil(carried[0][1]*0.5)));
     }
+  }
+  // Anti-repeat: if scheduled type is same as last, rotate to next lisière essence
+  if(type===lastType&&ci<13){
+    const lisiere=[TT.NOI,TT.AUL,TT.BOU,TT.ERA];
+    const idx=lisiere.indexOf(type);
+    if(idx>=0) type=lisiere[(idx+1)%lisiere.length];
   }
   // Fallback: check tree availability on map
   if(held<amount&&onMap<Math.ceil(amount/2)){
@@ -5265,7 +5275,7 @@ function shopTitle(t){
   if(t===TT.LUTH)return'🎻 Luthier';
   if(t===TT.HERM_E)return'⚔️ Estelle — Entraînement';
   if(t===TT.HERM_J)return'🌱 Le Jardinier';
-  if(t===TT.HERM_T)return'🎵 L\'Ermite Triste';
+  if(t===TT.HERM_T)return'🪓 Théodore — Ancien Maître-Artisan';
   if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
   if(t===TT.DOCTOR)return'💊 Dr. Engström';
   if(t===TT.ARCHITECT)return'🏗️ Sven — Architecte';
@@ -5441,7 +5451,7 @@ function updShop(){
     if(P.mushrooms>=3) items.push({n:`🍄 Échanger 3 champignons → 5 graines (champi: ${P.mushrooms})`,c:0,a:()=>{P.mushrooms-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
     if(P._hasArbreChantSeed) items.push({n:'   🌳 Graine d\'Arbre-Chant en poche ! (P pour planter)',c:9999,a:()=>{}});
   }else if(t===TT.HERM_T){
-    // Ermite Triste — Legendary Axe restoration
+    // Théodore (Ancien Maître-Artisan) — Legendary Axe restoration
     items=[];
     if(P._brokenAxeItem&&!P._tristeLiberated&&P._luthierMasterpiece){
       // Can restore the axe!
@@ -5459,8 +5469,8 @@ function updShop(){
         updShop();
       }});
     }else if(P._brokenAxeItem&&!P._luthierMasterpiece){
-      items.push({n:'   L\'ermite veut entendre quelque chose de beau...',c:9999,a:()=>{}});
-      items.push({n:'   (Apporte un instrument du luthier)',c:9999,a:()=>{}});
+      items.push({n:'   Théodore veut entendre quelque chose de beau...',c:9999,a:()=>{}});
+      items.push({n:'   (Apporte un instrument de Lucien le luthier)',c:9999,a:()=>{}});
     }
     items.push({n:`💬 "..." *silence*`,c:9999,a:()=>{}});
     if(!P._brokenAxeItem) items.push({n:'   (Il semble attendre quelque chose...)',c:9999,a:()=>{}});
@@ -5635,6 +5645,7 @@ function updShop(){
           if(delivered>=ct.amount){
             ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
             addDestruction(3); // completing contracts for the Enterprise = destruction
+            P._lastContractType=P._contract.type;
             P._contract=null;
             P._contractsDone=(P._contractsDone||0)+1;SESSION.contractsCompleted++;logEvent('CONTRACT',`Contrat #${P._contractsDone} complété`,{total:P._contractsDone});
             generateContract(); // new contract immediately
@@ -6275,7 +6286,7 @@ function dPlayer(){
   const dn=['u','r','d','l'],fr=Math.floor(P.wa)%4;
   const spr=_s[`p_${dn[P.f]}_${fr}`];
   if(spr){const hd=spr._hd||1;const sw=spr.width/hd*SC*pScale,sh=spr.height/hd*SC*pScale;X.drawImage(spr,0,0,spr.width,spr.height,sx-sw/2,sy-sh*.7,sw,sh)}
-  if(P.sw>.1){const dd=[[0,-1],[1,0],[0,1],[-1,0]][P.f];const ax=sx+dd[0]*28*SC*P.sw,ay=sy+dd[1]*28*SC*P.sw-8*SC;X.fillStyle='#bbc';X.fillRect(ax-6*SC,ay-6*SC,12*SC,10*SC);X.fillStyle='#8B6914';X.fillRect(ax-2*SC,ay+2*SC,4*SC,16*SC);X.globalAlpha=P.sw*.25;X.strokeStyle='#fff';X.lineWidth=3*SC;X.beginPath();X.arc(sx+dd[0]*16*SC,sy+dd[1]*16*SC-6*SC,20*SC,-Math.PI*.3,Math.PI*.3);X.stroke();X.globalAlpha=1}
+  if(P.sw>.1){const dd=[[0,-1],[1,0],[0,1],[-1,0]][P.f];const ax=sx+dd[0]*28*SC*P.sw,ay=sy+dd[1]*28*SC*P.sw-8*SC;if(ax>-20*SC&&ay>-20*SC&&ax<CV.width+20*SC&&ay<CV.height+20*SC){X.fillStyle='#bbc';X.fillRect(ax-6*SC,ay-6*SC,12*SC,10*SC);X.fillStyle='#8B6914';X.fillRect(ax-2*SC,ay+2*SC,4*SC,16*SC);X.globalAlpha=P.sw*.25;X.strokeStyle='#fff';X.lineWidth=3*SC;X.beginPath();X.arc(sx+dd[0]*16*SC,sy+dd[1]*16*SC-6*SC,20*SC,-Math.PI*.3,Math.PI*.3);X.stroke();X.globalAlpha=1}}
   if(P.dt>.05){const dd=[[0,-1],[1,0],[0,1],[-1,0]][P.f];X.globalAlpha=.18;if(spr){const hd=spr._hd||1;const sw=spr.width/hd*SC*pScale,sh=spr.height/hd*SC*pScale;X.drawImage(spr,0,0,spr.width,spr.height,sx-sw/2-dd[0]*28*SC,sy-sh*.7-dd[1]*28*SC,sw,sh)}X.globalAlpha=1}
   // Interaction prompt near buildings
   if(!shopOn&&!dead){
