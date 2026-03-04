@@ -100,12 +100,12 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 // ============ TUNING SYSTEM ============
 const TUNING = {
   // -- Corruption (gradual: visible ~3min, dangerous ~10min) --
-  corrMinCluster: 5,             // need 5 adjacent stumps (was 3)
-  corrSpreadRate: 0.004,         // slow spread (was 0.018)
+  corrMinCluster: 3,             // need 3 adjacent stumps (was 5 — too hard to trigger)
+  corrSpreadRate: 0.006,         // moderate spread (was 0.004)
   corrSpreadRadius: 3,           // tighter radius (was 4)
-  corrPassiveGrowth: 0.0000008,  // slower passive growth (was 0.000003)
-  corrDensityRadius: 5,          // larger check area — sparse cutting forgiven (was 3)
-  corrDensityThreshold: 0.15,    // need 15% stumps in area to trigger (was 0.08)
+  corrPassiveGrowth: 0.000002,   // moderate passive growth (was 0.0000008)
+  corrDensityRadius: 6,          // larger check area for scattered detection (was 5)
+  corrDensityThreshold: 0.08,    // need 8% stumps in area to trigger (was 0.15 — too strict)
   // -- Player --
   playerBaseHp: 5,
   playerBaseStamina: 100,
@@ -434,7 +434,7 @@ function exportSessionLog() {
 }
 
 const TUNING_META = {
-  'corrMinCluster': {min:2,max:12,step:1,cat:'Corruption',label:'Seuil cluster (stumps)'},
+  'corrMinCluster': {min:2,max:8,step:1,cat:'Corruption',label:'Seuil cluster (stumps)'},
   'corrSpreadRate': {min:0.0005,max:0.02,step:0.0005,cat:'Corruption',label:'Vitesse propagation'},
   'corrSpreadRadius': {min:1,max:6,step:0.5,cat:'Corruption',label:'Rayon propagation'},
   'corrPassiveGrowth': {min:0,max:0.000005,step:0.0000001,cat:'Corruption',label:'Croissance passive'},
@@ -3193,6 +3193,10 @@ function getDialogue(npcType){
     if(first){
       lines.push("Ah te voilà. L'Émissaire t'a recruté aussi, hein ?");
       lines.push("Fais gaffe avec ces gens-là. Enfin... viens me voir si tu veux du bon acier.");
+      lines.push("Avec une meilleure hache, tu couperas plus vite — et tu pourras atteindre des bois plus durs au nord.");
+    }else if(P.axe===1&&P.g>=80){
+      lines.push("Hé, tu trimmes encore avec cette hache de niv.1 ?");
+      lines.push("T'as largement de quoi te payer du bon acier. Regarde mes offres.");
     }else if(corrLevel > 8){
       lines.push("La forêt gronde... Mes outils tremblent la nuit sur l'établi.");
       lines.push("Mon père disait : « La forêt pardonne, mais elle n'oublie pas. »");
@@ -3580,6 +3584,9 @@ function getDialogue(npcType){
   
   // Inject tavern rumor as bonus line for Gunnar
   if(npcType === TT.TAV && lines.length>0){
+    if(P.axe===1&&P.g>=80&&(P._contractsDone||0)>=2){
+      lines.push("Au fait... Björn le forgeron peut améliorer ta hache. Ça change tout pour les arbres durs.");
+    }
     lines.push('💬 Rumeur: '+getTavernRumors());
   }
   
@@ -4195,30 +4202,43 @@ function checkCorrTrigger(tx,ty){
   // Village safe zone — no corruption near village
   if(inVillageZone(tx,ty))return;
   const cluster=findStumpCluster(tx,ty);
-  // Check 1: cluster size must exceed threshold
-  if(cluster.length>=TUNING.corrMinCluster){
-    // Check 2: density in local area - if stumps are well-spaced, don't corrupt
-    const r=TUNING.corrDensityRadius;
-    let stumps=0,total=0;
-    for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
-      const nx=tx+dx,ny=ty+dy;
-      if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
-      if(Math.sqrt(dx*dx+dy*dy)>r)continue;
-      total++;
-      if(map[ny][nx]===TT.ST)stumps++;
-    }
-    const density=stumps/Math.max(1,total);
-    if(density>=TUNING.corrDensityThreshold){
-      cluster.forEach(([x,y])=>{
-        if(!corrSrc[y][x]){
-          corrSrc[y][x]=true;
-          _corrSources.push([x,y]);
-          if(!corrT[y][x])corrT[y][x]=gt;
+  // Check 1: cluster size must exceed threshold (contiguous stumps)
+  // OR: enough stumps nearby even if not contiguous (scattered cutting still has impact)
+  const r=TUNING.corrDensityRadius;
+  let stumps=0,total=0;
+  for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++){
+    const nx=tx+dx,ny=ty+dy;
+    if(nx<0||ny<0||nx>=MW||ny>=MH)continue;
+    if(Math.sqrt(dx*dx+dy*dy)>r)continue;
+    total++;
+    if(map[ny][nx]===TT.ST)stumps++;
+  }
+  const density=stumps/Math.max(1,total);
+  // Trigger if EITHER: dense contiguous cluster OR enough scattered stumps nearby
+  const clusterOk=cluster.length>=TUNING.corrMinCluster;
+  const densityOk=density>=TUNING.corrDensityThreshold;
+  const scatteredOk=stumps>=TUNING.corrMinCluster+2; // 7+ stumps nearby even if not contiguous
+  if((clusterOk&&densityOk)||(scatteredOk)){
+    // Activate all stumps in the cluster + the immediate area
+    const toActivate=clusterOk?cluster:[];
+    // Also activate nearby stumps if scattered trigger
+    if(scatteredOk){
+      for(let dy2=-r;dy2<=r;dy2++)for(let dx2=-r;dx2<=r;dx2++){
+        const nx2=tx+dx2,ny2=ty+dy2;
+        if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH&&map[ny2][nx2]===TT.ST&&Math.sqrt(dx2*dx2+dy2*dy2)<=r){
+          if(!toActivate.some(([ax,ay])=>ax===nx2&&ay===ny2))toActivate.push([nx2,ny2]);
         }
-      });
-      shake=.4;
-      ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');sfxCorruption();
+      }
     }
+    toActivate.forEach(([x,y])=>{
+      if(!corrSrc[y][x]){
+        corrSrc[y][x]=true;
+        _corrSources.push([x,y]);
+        if(!corrT[y][x])corrT[y][x]=gt;
+      }
+    });
+    shake=.4;
+    ft2(tx+.5,ty-1,'⚠️ Corruption!','#b266ff');sfxCorruption();
   }
 }
 
@@ -5152,22 +5172,22 @@ function generateContract(){
   // Progression by contracts completed — volumes force upgrades, types push deeper
   const ci=P._contractsDone||0;
   let type, amount, timeBonus=0;
-  // === PHASE 1: Noisetier — learn, then grind (bag 30 → 45) ===
+  // === PHASE 1: Noisetier — learn, then intro variety ===
   if(ci===0){       type=TT.NOI; amount=3; timeBonus=120; // tutorial
   }else if(ci===1){ type=TT.NOI; amount=8;
   }else if(ci===2){ type=TT.NOI; amount=15;
-  }else if(ci===3){ type=TT.NOI; amount=20; // fills base bag (30)
-  }else if(ci===4){ type=TT.AUL; amount=12; // variety
-  }else if(ci===5){ type=TT.NOI; amount=40; // forces bag upgrade 30→45
+  }else if(ci===3){ type=TT.AUL; amount=5;  // gentle intro to Aulne (small amount)
+  }else if(ci===4){ type=TT.NOI; amount=20; // fills base bag (30)
+  }else if(ci===5){ type=TT.BOU; amount=8;  // intro Bouleau before big NOI push
+  }else if(ci===6){ type=TT.NOI; amount=40; // forces bag upgrade 30→45
   // === PHASE 2: Bouleau — clear-cutting begins, corruption ===
-  }else if(ci===6){ type=TT.BOU; amount=15;
-  }else if(ci===7){ type=TT.BOU; amount=25;
-  }else if(ci===8){ type=TT.BOU; amount=40; // forces bag upgrade 45→60
-  }else if(ci===9){ type=TT.AUL; amount=30; // breathing room
+  }else if(ci===7){ type=TT.BOU; amount=15;
+  }else if(ci===8){ type=TT.BOU; amount=25;
+  }else if(ci===9){ type=TT.AUL; amount=20; // breathing room
   // === PHASE 3: Érable — push deeper into lisière ===
-  }else if(ci===10){ type=TT.ERA; amount=12;
-  }else if(ci===11){ type=TT.ERA; amount=20;
-  }else if(ci===12){ type=TT.ERA; amount=35;
+  }else if(ci===10){ type=TT.ERA; amount=8;  // gentle intro (was 12)
+  }else if(ci===11){ type=TT.ERA; amount=15;
+  }else if(ci===12){ type=TT.ERA; amount=25;
   // === PHASE 4: Pin/Frêne — transition, push toward mixte ===
   }else if(ci===13){ type=TT.PIN; amount=10;
   }else if(ci===14){ type=TT.FRE; amount=15;
@@ -5191,7 +5211,7 @@ function generateContract(){
   const held=(P.woodByType&&P.woodByType[type])||0;
   const onMap=countTreeType(type);
   if(held<amount&&onMap<Math.ceil(amount/2)){
-    const axeLvl=P.axeLvl||1;
+    const axeLvl=P.axe||1;
     const minAxe=ESS[type]?.minAxe||1;
     const alts=CONTRACT_TYPES.filter(t=>{
       if(t===type)return false;
@@ -5733,7 +5753,29 @@ function updShop(){
     co.appendChild(d2);
   });
 }
-function respawn(){dead=false;P.hp=P.mhp;P.sta=P.msta;P.w=0;P.wv=0;P.sap=0;P.woodByType={};P.x=128;P.y=213;P.iv=2;P.g=Math.floor(P.g/2);P.seeds=0;P.essences=Math.floor((P.essences||0)/2);wildlife=[];wolves=[];sacredMiniBosses=[];document.getElementById('dth').style.display='none'}
+function respawn(){
+  dead=false;P.hp=P.mhp;P.sta=P.msta;P.x=128;P.y=213;P.iv=2;
+  // Progressive death penalty — lighter in early game
+  const early=(P._contractsDone||0)<5;
+  if(early){
+    // Keep half wood and 75% gold in early game
+    const keepW=Math.floor(P.w/2);
+    P.w=keepW;P.wv=Math.floor((P.wv||0)/2);P.sap=Math.floor(P.sap/2);
+    // Reduce woodByType proportionally
+    for(const k in P.woodByType)P.woodByType[k]=Math.floor(P.woodByType[k]/2);
+    P.g=Math.max(Math.floor(P.g*0.75),Math.floor(P.g/2));
+    ft2(P.x,P.y-1,'Tu reviens avec une partie de tes affaires.','#e9c46a');
+  }else{
+    // Full penalty later: lose all wood, half gold
+    P.w=0;P.wv=0;P.sap=0;P.woodByType={};
+    P.g=Math.floor(P.g/2);
+  }
+  P.seeds=0;P.essences=Math.floor((P.essences||0)/2);wildlife=[];wolves=[];sacredMiniBosses=[];
+  document.getElementById('dth').style.display='none';
+  // Post-respawn direction hint
+  if(P.g>=80&&P.axe===1)ft2(P.x,P.y-2,'Passe voir le Forgeron !','#52b788');
+  else if(P._contract)ft2(P.x,P.y-2,'Ton contrat est toujours actif.','#52b788');
+}
 
 // ============ SAVE / LOAD SYSTEM ============
 const SAVE_KEY='lumberjack_fever_save';
@@ -5829,6 +5871,8 @@ function getCurrentObjective(){
   if(P._contractsDone===0&&P.w>0&&P.g<10)return 'Vends ton bois : Taverne ou Emissaire (E).';
   if(P._contractsDone===0&&P.g>=10)return "L'Emissaire propose des contrats lucratifs.";
   if(P._contractsDone>=1&&P._contractsDone<3&&!P._firstCorruption)return 'Remplis des contrats. Explore vers le nord.';
+  if(P.axe===1&&P.g>=80&&P._contractsDone>=2)return 'Tu as assez d\'or — améliore ta hache au Forgeron (E) !';
+  if(P.axe===1&&P._contractsDone>=5)return 'La Forge propose des haches plus puissantes. Tu en auras besoin.';
   if(P._firstCorruption&&P._ritualsPerformed===0&&P.essences===0)return 'La corruption se repand. Tue des ombres pour des essences.';
   if(P._firstCorruption&&P.essences>=2&&P._ritualsPerformed===0)return 'Purifie les souches corrompues (R pres d\'une souche).';
   if(P._gmHealth<60&&P._gmAlive&&P._doctorArrived)return 'Grand-mere faiblit ! Achete des remedes au Docteur.';
