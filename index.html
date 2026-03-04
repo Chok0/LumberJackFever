@@ -122,7 +122,7 @@ const TUNING = {
   // -- Economy --
   baseBagSize: 15,
   bagUpgradeAmount: 15,
-  bagUpgradeCost1: 40,
+  bagUpgradeCost1: 25,
   bagUpgradeCost2: 100,
   bagUpgradeCost3: 200,
   sapSellChamane: 8,
@@ -3308,7 +3308,7 @@ function getDialogue(npcType){
     }else{
       const pool=[
         "Un ragoût de cerf et une bière de bouleau, ça te dit ?",
-        "Les ermites du nord ? Pas vus depuis des semaines. Bizarre.",
+        P._estelleMet?"Estelle t'a appris des trucs ? Cette femme est redoutable.":"Une guerrière vit en lisière nord, pas loin d'ici. Estelle, qu'elle s'appelle. Elle entraîne ceux qui osent la chercher.",
         "Le Forgeron ronchonne, mais il a le meilleur acier du canton.",
         "Ylva a encore parlé aux arbres ce matin. Chacun son truc.",
         "L'Entreprise du sud... Ils sont polis, mais quelque chose cloche.",
@@ -3477,10 +3477,10 @@ function getDialogue(npcType){
     if(v===0){
       P._estelleMet=true;addComprehension(2);addMaitrise(1);
       lines.push("...");
-      lines.push("Tu as du courage pour venir jusque-là. Estelle. Ancienne guerrière.");
+      lines.push("Tu as du courage pour venir jusque-là. Je suis Estelle, ancienne guerrière.");
+      lines.push("⚔️ Mon rôle : t'entraîner au combat et renforcer ton endurance.");
       lines.push("La forêt est dangereuse. Les ombres rôdent, les loups chassent.");
-      lines.push("Je peux t'entraîner. Te rendre plus fort, plus rapide.");
-      lines.push("Reviens me voir quand tu seras prêt.");
+      lines.push("Reviens me voir quand tu seras prêt. Je t'apprendrai le dash, les attaques, et la survie.");
     }else{
       const t=P._estelleTraining||0;
       if(t===0) lines.push("Prêt pour l'entraînement ? Ça va faire mal.");
@@ -3496,6 +3496,7 @@ function getDialogue(npcType){
       lines.push("Ha ha ! Un visiteur ! Bienvenue dans mon jardin !");
       lines.push("*gesticule frénétiquement parmi les plantes*");
       lines.push("Je suis le Jardinier. Le Fou des Graines, comme ils m'appellent.");
+      lines.push("🌱 Mon rôle : t'apprendre à replanter et guérir la forêt.");
       lines.push("L'ancien héros a planté les arbres sacrés, tu sais ? PLANTÉ !");
       lines.push("La forêt meurt parce que plus personne ne plante. On coupe, coupe, coupe...");
       lines.push("Je vais te donner des graines. Beaucoup de graines. PLANTE-LES !");
@@ -3824,7 +3825,8 @@ function genMap(){
             if(r<.25) map[y][x]=TT.NOI;
             else if(r<.45) map[y][x]=TT.AUL;
             else if(r<.80) map[y][x]=TT.BOU;
-            else map[y][x]=TT.ERA;
+            else if(r<.95) map[y][x]=TT.ERA;
+            else map[y][x]=TT.PIN; // ~5% Pin (minAxe:2) — visible but requires upgrade
           }else if(val<dens*.62) map[y][x]=TT.BOU;
           else if(val<dens*.68) map[y][x]=TT.BU;
           else if(n2(x,y,seed+100)>.90) map[y][x]=TT.FL;
@@ -4406,6 +4408,16 @@ function updCorr(d){
       if(corr[y][x]>0&&corr[y][x]<1)
         corr[y][x]=Math.min(1,corr[y][x]+(gt-corrT[y][x])*TUNING.corrPassiveGrowth);
     }
+  // === Global corruption threshold notifications ===
+  _corrGlobalT=(_corrGlobalT||0)+d;
+  if(_corrGlobalT>2){ // check every 2s
+    _corrGlobalT=0;
+    let gMax=0;
+    for(let cy=0;cy<MH;cy+=4)for(let cx=0;cx<MW;cx+=4)if(corr[cy]&&corr[cy][cx]>gMax)gMax=corr[cy][cx];
+    if(gMax>=0.5&&!P._corrWarn50){P._corrWarn50=true;ft2(P.x,P.y-1.5,'⚠️ La corruption s\'étend dangereusement...','#9b59b6');shake=.3;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}
+    if(gMax>=0.75&&!P._corrWarn75){P._corrWarn75=true;ft2(P.x,P.y-1.5,'☠️ La forêt agonise ! Corruption critique !','#8b0000');shake=.6;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}
+    if(gMax>=1.0&&!P._corrWarn100){P._corrWarn100=true;ft2(P.x,P.y-1.5,'💀 CORRUPTION TOTALE — La forêt est condamnée','#ff0000');shake=1;logEvent('CORRUPTION','corrMax atteint 1.0',{corrMax:1.0})}
+  }
   // Debt interest
   if(P._debt>0&&TUNING.debtInterestRate>0){
     P._debt=Math.floor(P._debt*(1+TUNING.debtInterestRate*d/60));
@@ -4435,7 +4447,10 @@ function spawnE(){
   for(let y=Math.max(0,py2-24);y<Math.min(MH,py2+24);y+=3)for(let x=Math.max(0,px2-24);x<Math.min(MW,px2+24);x+=3){if(corr[y]?.[x]>.3&&ents.length<mx){if(inVillageZone(x,y))continue;const dx=x-P.x,dy=y-P.y,di=Math.sqrt(dx*dx+dy*dy);if(di<6||di>24||Math.random()>spRate)continue;if(ents.some(e=>Math.abs(e.x-x)<3&&Math.abs(e.y-y)<3))continue;const cl=corr[y][x],age=(gt-corrT[y][x])/60,isG=cl>.65&&Math.random()>.4;
   const hpB=escalated?2:0;const dmgB=escalated?1:0;
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
-function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
+function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;
+// Despawn enemies that wander too far from corruption (safe zone protection)
+const eCorr=corr[Math.floor(e.y)]?.[Math.floor(e.x)]||0;if(eCorr<0.05){e._safeT=(e._safeT||0)+d;if(e._safeT>5){ents.splice(i,1);continue}}else{e._safeT=0}
+const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
 function hurtP(dmg,iv,ht,shk,col,n,attacker){
@@ -4448,7 +4463,7 @@ function hurtP(dmg,iv,ht,shk,col,n,attacker){
     ft2(P.x,P.y-1,'🛡️ Contre!','#ffd700');sfxHit();
     return;
   }
-  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block';SESSION.deaths++;SESSION.woodLostToDeaths+=P.w;const biome=P.y<40?3:P.y<100?2:P.y<170?1:0;logEvent('DEATH',`Mort (biome ${biome}, bois perdu: ${P.w}, or: ${P.g})`,{biome,woodLost:P.w,gold:P.g})}
+  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block';SESSION.deaths++;SESSION.woodLostToDeaths+=P.w;const biome=P.y<40?3:P.y<100?2:P.y<170?1:0;logEvent('DEATH',`Mort (biome ${biome}, bois perdu: ${P.w}, or: ${P.g})`,{biome,x:Math.floor(P.x),y:Math.floor(P.y),woodLost:P.w,gold:P.g})}
 }
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
@@ -5263,6 +5278,23 @@ function generateContract(){
   };
 }
 
+// After 3 consecutive rejections, generate a contract matching player's best inventory
+function generateContractFromInventory(){
+  const axeLvl=P.axe||1;
+  if(!P.woodByType){generateContract();return}
+  const best=Object.entries(P.woodByType)
+    .filter(([t,c])=>c>=3&&ESS[parseInt(t)]&&ESS[parseInt(t)].minAxe<=axeLvl)
+    .sort((a,b)=>b[1]-a[1]);
+  if(best.length===0){generateContract();return}
+  const type=parseInt(best[0][0]);
+  const held=best[0][1];
+  const ci=P._contractsDone||0;
+  const amount=Math.max(3,Math.min(held,5+ci*2));
+  const ess=ESS[type];if(!ess)return;
+  const pricePerUnit=ess.gold+Math.ceil(ess.gold*(0.3+ci*0.03));
+  P._contract={type,name:ess.name,amount,pricePerUnit,deadline:gt+TUNING.contractTimeLimit+120,acceptedAt:gt,zone:CONTRACT_ZONES[type]||'la forêt'};
+  ft2(P.x,P.y-1,'📜 Aldric adapte le contrat à ton stock','#52b788');
+}
 function shopTitle(t){
   if(t===TT.FORGE)return'⚒️ Forgeron';
   if(t===TT.CHAM)return'🌿 Chamane';
@@ -5314,7 +5346,7 @@ function updShop(){
       {n:`🔨 Renforcer: durabilité +20 (${maxDur}→${maxDur+20})`,c:durLvl>=5?9999:durUpCost,a:()=>{P._axeDurLevel=(P._axeDurLevel||0)+1;const nd=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1)+(P._axeDurLevel)*20;P._axeMaxDur=nd;P._axeDur=nd;ft2(P.x,P.y,`🔨 Durabilité: ${nd}`,'#e9c46a');updShop()}},
       {n:`   Durabilité: ${maxDur} coups (niv.${durLvl}/5)`,c:9999,a:()=>{}},
       {n:'── ÉQUIPEMENT ──',c:9999,a:()=>{}},
-      {n:P._hasLantern?'✅ Lanterne (acquise)':'🏮 Lanterne (lumière permanente la nuit)',c:P._hasLantern?9999:150,a:()=>{P._hasLantern=true;P._lanternLvl=1;ft2(P.x,P.y,'🏮 Lanterne acquise!','#ffd700');updShop()}},
+      {n:P._hasLantern?'✅ Lanterne (acquise)':'🏮 Lanterne (lumière permanente la nuit)',c:P._hasLantern?9999:250,a:()=>{P._hasLantern=true;P._lanternLvl=1;ft2(P.x,P.y,'🏮 Lanterne acquise!','#ffd700');updShop()}},
       {n:!P._hasLantern?'   (acheter la lanterne d\'abord)':(P._lanternLvl||1)>=3?'✅ Lanterne max (niv.3)':`🏮 Améliorer lanterne niv.${(P._lanternLvl||1)+1} (rayon +50%)`,c:!P._hasLantern||((P._lanternLvl||1)>=3)?9999:80+((P._lanternLvl||1))*60,a:()=>{P._lanternLvl=(P._lanternLvl||1)+1;ft2(P.x,P.y,`🏮 Lanterne niv.${P._lanternLvl}!`,'#ffd700');updShop()}},
     ];
   }else if(t===TT.CHAM){
@@ -5406,7 +5438,7 @@ function updShop(){
     const wisdoms=['La forêt ne pardonne pas.','Les racines murmurent.','Le Gardien veille.','Coupe un séquoia, la forêt s\'en souviendra mille ans.'];
     items=[
       {n:`💬 "${wisdoms[Math.floor(gt)%wisdoms.length]}"`,c:9999,a:()=>{}},
-      {n:'🍵 Thé de l\'ermite (stamina ×2, 120s)',c:5,a:()=>{P._encens=gt+120;ft2(P.x,P.y,'🍵 Vigueur!','#74c69d')}},
+      {n:'🍵 Thé de l\'ermite (stamina ×2, 120s)',c:5,a:()=>{P._encens=gt+120;ft2(P.x,P.y,'🍵 Vigueur!','#74c69d');logEvent('ITEM','Thé ermite acheté',{duration:120})}},
       {n:'🗺️ Secret du coin',c:10,a:()=>{P._hermitMet=true;ft2(P.x,P.y,'📍 Arbre sacré marqué','#daa520')}},
     ];
   }else if(t===TT.HERM_E){
@@ -5617,7 +5649,12 @@ function updShop(){
     items.push({n:`🪵 Vendre tout le bois (${P.w} → ${baseVal} or)`,c:0,a:()=>{if(P.w>0){P.g+=baseVal;SESSION.totalGoldEarned+=baseVal;sfxSell();ft2(P.x,P.y,`💰+${baseVal}`,'#ffd700');P.w=0;P.wv=0;P.woodByType={}}},wd:1});
     
     // 2. Contract — timed specific wood request
-    if(P._contract){
+    if(P._contractCooldown&&gt<P._contractCooldown){
+      const cdLeft=Math.ceil(P._contractCooldown-gt);
+      items.push({n:`📜 Nouveau contrat dans ${cdLeft}s...`,c:9999,a:()=>{}});
+      items.push({n:`   Aldric prépare les papiers.`,c:9999,a:()=>{}});
+    }else if(P._contract){
+      P._contractCooldown=0; // clear cooldown
       const ct=P._contract;
       const ess=ESS[ct.type];
       const held=P.woodByType[ct.type]||0;
@@ -5646,16 +5683,18 @@ function updShop(){
             ft2(P.x,P.y-1,isLate?'📜 Contrat livré (retard)':'📜 Contrat rempli!',isLate?'#e9c46a':'#52b788');sfxContract();
             addDestruction(3); // completing contracts for the Enterprise = destruction
             P._lastContractType=P._contract.type;
+            P._contractRejects=0; // reset rejection counter on success
             P._contract=null;
             P._contractsDone=(P._contractsDone||0)+1;SESSION.contractsCompleted++;logEvent('CONTRACT',`Contrat #${P._contractsDone} complété`,{total:P._contractsDone});
-            generateContract(); // new contract immediately
+            P._contractCooldown=gt+15; // 15s cooldown before next contract available
+            generateContract();
           }else{
             ct.amount-=delivered;
             ft2(P.x,P.y-1,`📜 Reste: ${ct.amount}×${ct.name}`,'#e9c46a');
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;logEvent('CONTRACT','Contrat abandonné');generateContract();ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;P._contractRejects=(P._contractRejects||0)+1;logEvent('CONTRACT_ABANDON','Contrat abandonné',{rejects:P._contractRejects});if(P._contractRejects>=3){P._contractRejects=0;generateContractFromInventory()}else{generateContract()}ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
     }else{
       // No contract — generate immediately
       generateContract();
@@ -5710,8 +5749,8 @@ function updShop(){
     document.querySelector('#shp h2').textContent='🎒 Inventaire';
     items=[];
     // Consumables
-    items.push({n:`🧪 Potions: ${P._potions||0}`,c:0,cu:1,a:()=>{if((P._potions||0)>0){P._potions--;P.hp=Math.min(P.mhp,P.hp+3);ft2(P.x,P.y,'❤️+3','#e74c3c')}}});
-    items.push({n:`🌀 Encens: ${P._encensStock||0}`,c:0,cu:1,a:()=>{if((P._encensStock||0)>0){P._encensStock--;P._encens=gt+60;ft2(P.x,P.y,'🌀 60s','#74c69d')}}});
+    items.push({n:`🧪 Potions: ${P._potions||0}`,c:0,cu:1,a:()=>{if((P._potions||0)>0){P._potions--;P.hp=Math.min(P.mhp,P.hp+3);ft2(P.x,P.y,'❤️+3','#e74c3c');logEvent('ITEM','Potion utilisée',{hp:P.hp,stock:P._potions})}}});
+    items.push({n:`🌀 Encens: ${P._encensStock||0}`,c:0,cu:1,a:()=>{if((P._encensStock||0)>0){P._encensStock--;P._encens=gt+60;ft2(P.x,P.y,'🌀 60s','#74c69d');logEvent('ITEM','Encens utilisé',{duration:60,stock:P._encensStock})}}});
     // Equipment
     items.push({n:`🪓 Hache Niv.${P.axe} (dég:${P.pow})`,c:9999,a:()=>{}});
     items.push({n:`📦 Sac: ${invUsed()}/${P.invCap}`,c:9999,a:()=>{}});
@@ -5794,9 +5833,14 @@ function respawn(){
   }
   P.seeds=0;P.essences=Math.floor((P.essences||0)/2);wildlife=[];wolves=[];sacredMiniBosses=[];
   document.getElementById('dth').style.display='none';
-  // Post-respawn direction hint
+  // Post-respawn recovery — small gold advance and direction
+  P._respawnRecovery=true;
+  const recoveryGold=Math.max(10,Math.floor(15+P._contractsDone*3));
+  P.g+=recoveryGold;
+  ft2(P.x,P.y-1,`💰 Le village t'avance ${recoveryGold} or pour repartir.`,'#52b788');
   if(P.g>=80&&P.axe===1)ft2(P.x,P.y-2,'Passe voir le Forgeron !','#52b788');
   else if(P._contract)ft2(P.x,P.y-2,'Ton contrat est toujours actif.','#52b788');
+  else ft2(P.x,P.y-2,'Parle à l\'Émissaire pour un nouveau contrat.','#52b788');
 }
 
 // ============ SAVE / LOAD SYSTEM ============
@@ -6765,7 +6809,8 @@ function dUI(){
   if(bossWest&&!bossWest.defeated) extra+=` \ud83d\udc3b OURS`;
   if(wolves.length>0) extra+=` · <span style="color:#ccaa00">\ud83d\udc3a ${wolves.length}</span>`;
   if(P._encens&&gt<P._encens) extra+=` · 🌀${Math.ceil(P._encens-gt)}s`;
-  document.getElementById('st').innerHTML=`❤️ <span class="br"><span class="bf" style="width:${hp}%;background:${hc}"></span></span> ${P.hp}/${P.mhp}<br>⚡ <span class="br"><span class="bf" style="width:${st}%;background:#3d85c6"></span></span><br>📦 <span class="br"><span class="bf" style="width:${invPct}%;background:${invCol}"></span></span> ${used}/${cap}<br>${extra}`;
+  const cutsLeft=Math.floor(P.sta/TUNING.cutStaCost);
+  document.getElementById('st').innerHTML=`❤️ <span class="br"><span class="bf" style="width:${hp}%;background:${hc}"></span></span> ${P.hp}/${P.mhp}<br>⚡ <span class="br"><span class="bf" style="width:${st}%;background:#3d85c6"></span></span> <span style="font-size:8px;color:#88a">${cutsLeft} coupes</span><br>📦 <span class="br"><span class="bf" style="width:${invPct}%;background:${invCol}"></span></span> ${used}/${cap}<br>${extra}`;
   let invLine=`🪵 ${P.w} (${P.wv||0} 💰) · 💧 ${P.sap} · 💰 ${P.g}`;
   if(P._potions>0||P._encensStock>0) invLine+=` · 🧪${P._potions||0} 🌀${P._encensStock||0}`;
   if(P.herbs>0||P.mushrooms>0) invLine+=` · 🌿${P.herbs} 🍄${P.mushrooms}`;
