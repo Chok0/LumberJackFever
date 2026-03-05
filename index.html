@@ -4381,6 +4381,7 @@ function inVillageZone(tx,ty){
 // Corruption only spreads from marked source tiles (contiguous clear-cuts)
 let _corrSources=[]; // list of [x,y] source positions for fast iteration
 let _corrT2=0;
+let _corrGlobalT=0;
 function updCorr(d){
   _corrT2+=d;if(_corrT2<.5)return;_corrT2=0;
   const sr=TUNING.corrSpreadRadius;
@@ -5694,7 +5695,7 @@ function updShop(){
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;P._contractRejects=(P._contractRejects||0)+1;logEvent('CONTRACT_ABANDON','Contrat abandonné',{rejects:P._contractRejects});if(P._contractRejects>=3){P._contractRejects=0;generateContractFromInventory()}else{generateContract()}ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;P._contractRejects=(P._contractRejects||0)+1;logEvent('CONTRACT_ABANDON','Contrat abandonné',{rejects:P._contractRejects});if(P._contractRejects>=3){P._contractRejects=0;generateContractFromInventory();}else{generateContract();}ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
     }else{
       // No contract — generate immediately
       generateContract();
