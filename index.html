@@ -634,7 +634,7 @@ let wind={x:0,y:0,t:0};
 let regrowMap=[]; // tracks stumps that will regrow: {ess, time}
 let wolves=[]; // nocturnal wolf packs: {x,y,hp,mhp,spd,dmg,ht,ar,fr,packId,fleeDir}
 let _wolfPacks=0,_wolfSpawnT=0; // pack count & spawn cooldown timer
-let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
+let P={x:128,y:210,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
   invCap:15,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
   herbs:0,mushrooms:0, // collected from clearings
   chestWood:0,chestSap:0,chestWoodByType:{}, // stored in house chest
@@ -5835,7 +5835,7 @@ function updShop(){
   });
 }
 function respawn(){
-  dead=false;P.hp=P.mhp;P.sta=P.msta;P.x=128;P.y=213;P.iv=2;
+  dead=false;P.hp=P.mhp;P.sta=P.msta;P.x=128;P.y=210;P.iv=2;
   // Progressive death penalty — lighter in early game
   const early=(P._contractsDone||0)<5;
   if(early){
