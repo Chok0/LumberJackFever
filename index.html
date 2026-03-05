@@ -111,9 +111,9 @@ const TUNING = {
   playerBaseStamina: 100,
   playerSpeed: 3.85,
   dashSpeedMult: 3.0,
-  dashStaCost: 80,
+  dashStaCost: 40,              // reduced from 80 — dash must remain usable as emergency escape
   cutStaCost: 15,
-  cutCooldown: 0.3,
+  cutCooldown: 0.45,            // base cooldown (raised from 0.3 — slower start, upgradeable)
   staRegen: 30,
   // -- Axe Durability --
   axeBaseDur: 50,           // base durability (hits)
@@ -704,6 +704,7 @@ let P={x:128,y:213,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _zonesRestored:0,
   // Combat upgrades from Estelle
   _staminaBonus:0,
+  _staRegenBonus:0,     // purchased regen bonus (adds to base staRegen)
   _lastSwingT:0,       // timestamp of last swing (for circular double-tap)
   _counterWindow:0,    // counter-attack active window timer
   // === FOUR SCORING AXES (invisible, never shown to player) ===
@@ -4998,7 +4999,7 @@ function updP2(d){
   const ptile=map[pty]?.[ptx];
   if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);sfxPickup();}
   if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);sfxPickup();}
-  const staRegen=TUNING.staRegen*(P._encens&&gt<P._encens?2:1)*(1-(P._corrStaDebuff||0));
+  const staRegen=(TUNING.staRegen+(P._staRegenBonus||0))*(P._encens&&gt<P._encens?2:1)*(1-(P._corrStaDebuff||0));
   P.sta=Math.min(P.msta,P.sta+staRegen*d);P.ct=Math.max(0,P.ct-d);P.iv=Math.max(0,P.iv-d);P.ht=Math.max(0,P.ht-d);P.sw=Math.max(0,P.sw-d*10);
   P._counterWindow=Math.max(0,(P._counterWindow||0)-d);
   if(K.Space&&P.ct<=0&&P.sta>TUNING.cutStaCost){
@@ -5007,7 +5008,7 @@ function updP2(d){
     // --- Dash attack (C held + Space) ---
     const isDashAttack=P._hasSkillDashAttack&&K.KeyC&&(mx||my);
     P._lastSwingT=gt;
-    P.ct=TUNING.cutCooldown/P.axe;P.sta-=TUNING.cutStaCost;SESSION.staminaDumped+=TUNING.cutStaCost;P.sw=1;sfxChop();
+    P.ct=TUNING.cutCooldown/(1+0.25*(P.axe-1));P.sta-=TUNING.cutStaCost;SESSION.staminaDumped+=TUNING.cutStaCost;P.sw=1;sfxChop();
     // Counter-attack window
     if(P._hasSkillCounter) P._counterWindow=0.3;
     // Scare wildlife on cut
@@ -5452,7 +5453,15 @@ function updShop(){
     if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;addMaitrise(3);ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
     if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;addMaitrise(3);ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
     if(t2>=4) items.push({n:'⚡ Stamina +25',c:80,a:()=>{P.msta+=25;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+25;ft2(P.x,P.y,'⚡+25 Stamina','#cc4444')}});
-    items.push({n:`   Entraînement: Niv.${t2} · Stamina bonus: +${P._staminaBonus||0}`,c:9999,a:()=>{}});
+    // Stamina regen upgrades (independent from combat skills, available after dash)
+    if(P._hasDash){
+      const regenLvl=P._staRegenBonus||0;
+      if(regenLvl<30){
+        const regenCost=25+regenLvl*2;
+        items.push({n:`🔄 Regen stamina +10/s (${TUNING.staRegen+regenLvl}→${TUNING.staRegen+regenLvl+10}/s)`,c:regenCost,a:()=>{P._staRegenBonus=(P._staRegenBonus||0)+10;ft2(P.x,P.y,`🔄 Regen +10/s!`,'#52b788');logEvent('UPGRADE',`Stamina regen +10`,{totalRegen:TUNING.staRegen+P._staRegenBonus});updShop()}});
+      }
+    }
+    items.push({n:`   Entraînement: Niv.${t2} · Stamina: +${P._staminaBonus||0} · Regen: +${P._staRegenBonus||0}/s`,c:9999,a:()=>{}});
   }else if(t===TT.HERM_J){
     // Ermite Jardinier — Seeds & quest
     items=[];
@@ -5641,7 +5650,10 @@ function updShop(){
     }else if(t===TT.EMIS){
     // Émissaire: sell wood, contracts, loans
     // Generate new contract if none active and cooldown expired
-    if(!P._contract) generateContract();
+    if(!P._contract&&!(P._contractCooldown&&gt<P._contractCooldown)){
+      if((P._contractRejects||0)>=3){P._contractRejects=0;generateContractFromInventory();}
+      else generateContract();
+    }
     
     const baseVal=P.wv||0;
     items=[];
@@ -5695,7 +5707,7 @@ function updShop(){
           }
         }
       }});
-      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;P._contractRejects=(P._contractRejects||0)+1;logEvent('CONTRACT_ABANDON','Contrat abandonné',{rejects:P._contractRejects});if(P._contractRejects>=3){P._contractRejects=0;generateContractFromInventory();}else{generateContract();}ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c')}});
+      items.push({n:'❌ Abandonner le contrat',c:0,ca:1,a:()=>{P._contract=null;SESSION.contractsFailed++;P._contractRejects=(P._contractRejects||0)+1;logEvent('CONTRACT_ABANDON','Contrat abandonné',{rejects:P._contractRejects});P._contractCooldown=gt+15;ft2(P.x,P.y,'📜 Contrat annulé','#e74c3c');updShop()}});
     }else{
       // No contract — generate immediately
       generateContract();
