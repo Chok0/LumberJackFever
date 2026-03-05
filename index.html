@@ -4381,6 +4381,7 @@ function inVillageZone(tx,ty){
 // Corruption only spreads from marked source tiles (contiguous clear-cuts)
 let _corrSources=[]; // list of [x,y] source positions for fast iteration
 let _corrT2=0;
+let _corrGlobalT=0;
 function updCorr(d){
   _corrT2+=d;if(_corrT2<.5)return;_corrT2=0;
   const sr=TUNING.corrSpreadRadius;
