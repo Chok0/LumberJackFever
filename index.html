@@ -73,7 +73,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <canvas id="mm" width="128" height="112"></canvas>
 <div id="time-ind"></div>
 <div id="ui"><div class="pn" id="st"></div><div class="pn" id="inv"></div></div>
-<div id="hlp">ZQSD · ESPACE: couper · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · TAB: éditeur · L: session log</div>
+<div id="hlp">ZQSD/flèches · ESPACE: couper/dialogue · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · M: musique · TAB: éditeur · L: log</div>
 <div id="shp"><div id="dlg"><div id="dlg-box"><canvas id="dlg-portrait" width="80" height="80"></canvas><div id="dlg-right"><div id="dlg-name"></div><div id="dlg-text"></div></div></div><button id="dlg-next" onclick="advanceDialogue()">...</button></div><h2>🏠 Village</h2><div id="si2"></div><p style="margin-top:6px;font-size:8px;color:#52b788;text-align:center">E / Échap: fermer</p></div>
 <div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button><button class="sb" style="margin-top:4px;background:#3a1010;border-color:#8b0000" onclick="newGame()">Nouvelle partie</button></div>
 <div id="title-screen" style="position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(180deg,#060a0e 0%,#0a1a10 50%,#060a0e 100%);z-index:150;display:flex;flex-direction:column;justify-content:center;align-items:center">
@@ -579,7 +579,7 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   // Rare
   ERO:95, // Érable ondé (forêt mixte rare)
   // Luthier
-  LUTH:48,
+  LUTH:49,
   // New systems
   ARBRE_CHANT:100, // Arbre-Chant unique sacred tree (player-planted)
   SEED_TILE:101,   // Growing seed (sapling from Jardinier seeds)
@@ -649,7 +649,7 @@ let P={x:128,y:210,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:
   _axeMaxDur:50, // max durability (base + level bonus)
   _repairCount:0, // times axe has been repaired (+1g per repair)
   _axeDurLevel:0, // durability upgrade level (0-5)
-  _hasDash:false, // learned dash skill from Estelle
+  _hasDash:true, // base skill (C+direction) — Estelle teaches the advanced variants
   _hasLantern:false, // permanent night light
   _torches:0, // consumable torches (120s each)
   _torchActive:false, // torch currently lit
@@ -2949,6 +2949,74 @@ function drawArchitectPortrait(c){
   c.fillStyle='#c0a860';c.fillRect(60,40,4,30);
   c.fillStyle='#e0c880';c.fillRect(60,40,4,2);c.fillRect(60,50,4,1);c.fillRect(60,60,4,1);
 }
+function drawCastorPortrait(c){
+  // Riverside background
+  c.fillStyle='#0a1410';c.fillRect(0,0,80,80);
+  c.fillStyle='rgba(26,106,170,0.18)';c.fillRect(0,58,80,22);
+  c.fillStyle='rgba(42,130,190,0.15)';c.fillRect(0,60,80,2);c.fillRect(0,66,80,1);
+  // Gnawed log in background
+  c.fillStyle='#5a3a1a';c.fillRect(4,50,18,8);c.fillStyle='#8a6a3a';c.fillRect(4,50,18,2);
+  // Body — thick brown fur
+  c.fillStyle='#6a4a28';c.fillRect(20,46,40,34);
+  c.fillStyle='#7a5a34';c.fillRect(24,50,32,30);
+  // Head — round
+  c.fillStyle='#7a5530';c.fillRect(24,14,32,36);
+  c.fillStyle='#8a6540';c.fillRect(28,18,24,28);
+  // Ears — small round
+  c.fillStyle='#5a3a1a';c.fillRect(24,10,8,8);c.fillRect(48,10,8,8);
+  c.fillStyle='#6a4a28';c.fillRect(26,12,4,4);c.fillRect(50,12,4,4);
+  // Eyes — small, dark, keen
+  c.fillStyle='#0a0a0a';c.fillRect(32,26,5,5);c.fillRect(44,26,5,5);
+  c.fillStyle='#3a2a10';c.fillRect(33,27,2,2);c.fillRect(45,27,2,2);
+  c.fillStyle='#fff';c.fillRect(34,27,1,1);c.fillRect(46,27,1,1);
+  // Muzzle
+  c.fillStyle='#9a7a50';c.fillRect(32,34,16,12);
+  c.fillStyle='#2a1a0a';c.fillRect(37,34,6,4); // nose
+  // Iconic incisors
+  c.fillStyle='#f0e8d0';c.fillRect(36,44,4,6);c.fillRect(41,44,4,6);
+  c.fillStyle='#d8d0b8';c.fillRect(36,48,4,2);c.fillRect(41,48,4,2);
+  // Whiskers
+  c.fillStyle='rgba(220,220,220,0.5)';c.fillRect(24,38,8,1);c.fillRect(48,38,8,1);c.fillRect(26,41,6,1);c.fillRect(48,41,6,1);
+  // Branch held in paws
+  c.fillStyle='#8a6a3a';c.fillRect(14,62,52,4);
+  c.fillStyle='#52b788';c.fillRect(60,58,6,5);c.fillRect(64,62,6,5);
+  c.fillStyle='#6a4a28';c.fillRect(28,58,8,8);c.fillRect(44,58,8,8); // paws
+}
+function drawDoctorPortrait(c){
+  // Clinical cool background
+  c.fillStyle='#0a1016';c.fillRect(0,0,80,80);
+  const gr=c.createRadialGradient(40,36,8,40,40,50);
+  gr.addColorStop(0,'rgba(74,138,170,0.12)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  c.fillStyle=gr;c.fillRect(0,0,80,80);
+  // Shoulders — dark coat with pale collar
+  c.fillStyle='#2a3440';c.fillRect(16,62,48,18);
+  c.fillStyle='#e8e4dc';c.fillRect(30,62,20,6); // collar
+  c.fillStyle='#3a4450';c.fillRect(20,66,40,14);
+  // Neck
+  c.fillStyle='#d0a884';c.fillRect(34,54,12,10);
+  // Head — narrow, composed
+  c.fillStyle='#dcb490';c.fillRect(27,16,26,40);
+  c.fillStyle='#d0a884';c.fillRect(27,44,26,10); // jaw shading
+  // Neat combed hair, greying temples
+  c.fillStyle='#4a4038';c.fillRect(25,10,30,10);
+  c.fillStyle='#8a8078';c.fillRect(25,14,4,8);c.fillRect(51,14,4,8);
+  // Round spectacles
+  c.fillStyle='rgba(200,220,230,0.25)';c.fillRect(30,26,8,7);c.fillRect(42,26,8,7);
+  c.strokeStyle='#b0a890';c.lineWidth=1;
+  c.strokeRect(30.5,26.5,7,6);c.strokeRect(42.5,26.5,7,6);
+  c.fillStyle='#b0a890';c.fillRect(38,29,4,1);
+  // Eyes behind lenses
+  c.fillStyle='#1a2a30';c.fillRect(32,28,3,3);c.fillRect(44,28,3,3);
+  // Nose
+  c.fillStyle='#c89870';c.fillRect(38,32,4,7);
+  // Thin professional mouth
+  c.fillStyle='#a07058';c.fillRect(35,44,10,2);
+  // Stethoscope
+  c.fillStyle='#2a2a2a';c.fillRect(30,64,3,10);c.fillRect(47,64,3,10);
+  c.fillStyle='#c0c0c8';c.fillRect(46,72,6,6);
+  // Red cross pin
+  c.fillStyle='#e74c3c';c.fillRect(24,68,2,6);c.fillRect(22,70,6,2);
+}
 function drawPortrait(npcType, canvas){
   const c = canvas.getContext('2d');
   c.imageSmoothingEnabled = false;
@@ -2967,6 +3035,8 @@ function drawPortrait(npcType, canvas){
   else if(npcType === TT.HERM_J) drawJardinierPortrait(c);
   else if(npcType === TT.HERM_T) drawTristePortrait(c);
   else if(npcType === TT.ARCHITECT) drawArchitectPortrait(c);
+  else if(npcType === TT.CASTOR) drawCastorPortrait(c);
+  else if(npcType === TT.DOCTOR) drawDoctorPortrait(c);
 
   // Border glow
   const nd = NPC_DATA[npcType];
@@ -3392,11 +3462,11 @@ function getDialogue(npcType){
     }else{
       lines.push("Votre grand-mère va bien pour le moment. Continuez les soins réguliers.");
     }
-  }else if(npcType === TT.ARCHITECT){
+  }else if(npcType === TT.ARCHITECT || npcType === TT.CASTOR){
     if(first){
-      lines.push("Salut ! Sven, architecte et ingénieur. Les rivières m'ont attiré ici.");
-      lines.push("Tu veux traverser les cours d'eau ? Construire des ponts ? Des radeaux ?");
-      lines.push("J'ai les plans pour tout ça. Et aussi des barricades pour protéger le village.");
+      lines.push("*Un castor te regarde, une branche entre les dents.*");
+      lines.push("On dit que je suis le meilleur bâtisseur de la rivière. C'est vrai.");
+      lines.push("Radeaux, ponts, barricades... J'ai les plans pour tout ça.");
       lines.push("Rapporte-moi du bois, et je t'apprendrai à construire.");
     }else if((P._vilUnrest||0)>30&&(P._barricadesBuilt||0)<5){
       lines.push("Le village est menacé ! Les monstres rôdent au nord...");
@@ -3753,9 +3823,9 @@ function genMap(){
           // vy 6-10: sparse trees (transition to lisière)
           if(vy>=6){
             const r=n2(x,y,seed+500);
-            if(r>.82) map[y][x]=TT.BOU;
+            if(r>.92) map[y][x]=TT.BU;
+            else if(r>.82) map[y][x]=TT.BOU;
             else if(r>.78) map[y][x]=TT.NOI;
-            else if(r>.92) map[y][x]=TT.BU;
           }else{
             // Only flowers and occasional bush near village
             if(n2(x,y,seed+500)>.93) map[y][x]=TT.FL;
@@ -3904,10 +3974,10 @@ function genMap(){
   for(const cy of chokeYs){
     if(cy >= MH-12) continue;
     const treeType = cy>B_MIX?TT.BOU:cy>B_ANC?TT.CHE:cy>B_PRIM?TT.IFS:TT.SEQ;
-    const numGaps = 2 + Math.floor(n2(cy,0,seed+700));
+    const numGaps = 2 + Math.floor(n2(cy,0,seed+700)*2);
     const gaps = [];
     for(let g=0;g<numGaps;g++){
-      gaps.push(Math.floor(15 + n2(g,cy,seed+710) * (MW-30)));
+      gaps.push(Math.floor(90 + n2(g,cy,seed+710) * 76)); // inside the wall span [88,168)
     }
     for(let x=88;x<168;x++){
       const nearGap = gaps.some(gx => Math.abs(x-gx) <= 1);
@@ -3968,10 +4038,10 @@ function genMap(){
     {y:B_PRIM, tree:TT.SEQ, thick:6},   // Ancienne→Primordiale: wall of Séquoias (axe 4)
   ];
   for(const border of borderYs){
-    const numGaps = 1 + Math.floor(n2(border.y,99,seed+900));
+    const numGaps = 1 + Math.floor(n2(border.y,99,seed+900)*2);
     const bGaps = [];
     for(let g=0;g<numGaps;g++){
-      bGaps.push(Math.floor(20 + n2(g,border.y,seed+910) * (MW-40)));
+      bGaps.push(Math.floor(90 + n2(g,border.y,seed+910) * 76)); // inside the wall span [88,168)
     }
     for(let x=88;x<168;x++){
       const nearGap = bGaps.some(gx => Math.abs(x-gx) <= 1);
@@ -4296,6 +4366,7 @@ function spawnDoctorIfReady(){
   if((P._contractsDone||0)<1)return;
   P._doctorArrived=true;
   // Place doctor in village near the home
+  const CX=128, VIL_Y=MH-12;
   const cx=CX-5, cy=VIL_Y+4;
   if(cy<MH&&cx>0&&cx<MW){
     map[cy][cx]=TT.DOCTOR;
@@ -4316,8 +4387,8 @@ function updRegrow(d){
       if((corr[y]?.[x]||0)<.4){
         map[y][x]=rg.ess;
         regrowMap[y][x]=null;
-        // Remove from corruption source if it was one
-        if(corrSrc[y]?.[x])corrSrc[y][x]=false;
+        // Remove from corruption source if it was one (flag AND the iterated list)
+        if(corrSrc[y]?.[x]){corrSrc[y][x]=false;_corrSources=_corrSources.filter(([sx,sy])=>sx!==x||sy!==y)}
         // Visual feedback near player
         const dx=x-P.x,dy=y-P.y;
         if(Math.sqrt(dx*dx+dy*dy)<14){
@@ -4390,7 +4461,8 @@ let _corrSources=[]; // list of [x,y] source positions for fast iteration
 let _corrT2=0;
 let _corrGlobalT=0;
 function updCorr(d){
-  _corrT2+=d;if(_corrT2<.5)return;_corrT2=0;
+  _corrT2+=d;if(_corrT2<.5)return;
+  const dt=_corrT2;_corrT2=0; // real elapsed time since last tick (throttled to ~0.5s)
   const sr=TUNING.corrSpreadRadius;
   // Only iterate known sources
   _corrSources.forEach(([x,y])=>{
@@ -4417,7 +4489,7 @@ function updCorr(d){
         corr[y][x]=Math.min(1,corr[y][x]+(gt-corrT[y][x])*TUNING.corrPassiveGrowth);
     }
   // === Global corruption threshold notifications ===
-  _corrGlobalT=(_corrGlobalT||0)+d;
+  _corrGlobalT=(_corrGlobalT||0)+dt;
   if(_corrGlobalT>2){ // check every 2s
     _corrGlobalT=0;
     let gMax=0;
@@ -4427,13 +4499,15 @@ function updCorr(d){
     if(gMax>=0.75&&!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;ft2(P.x,P.y-1.5,'☠️ La forêt agonise ! Corruption critique !','#8b0000');shake=.6;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}
     if(gMax>=1.0&&!P._corrWarn100){if(!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}P._corrWarn100=true;ft2(P.x,P.y-1.5,'💀 CORRUPTION TOTALE — La forêt est condamnée','#ff0000');shake=1;logEvent('CORRUPTION','corrMax atteint 1.0',{corrMax:1.0})}
   }
-  // Debt interest
+  // Debt interest — accumulate time, apply the full rate once per minute
+  // (per-tick compounding + Math.floor truncated all growth on small debts)
   if(P._debt>0&&TUNING.debtInterestRate>0){
-    P._debt=Math.floor(P._debt*(1+TUNING.debtInterestRate*d/60));
-  }
+    P._debtTime=(P._debtTime||0)+dt;
+    if(P._debtTime>=60){P._debtTime-=60;P._debt=Math.ceil(P._debt*(1+TUNING.debtInterestRate))}
+  }else{P._debtTime=0}
   // === GRANDMOTHER HEALTH TIMER ===
   if(P._gmAlive&&P._doctorArrived){
-    P._gmHealth=Math.max(0,P._gmHealth-TUNING.gmHealthDecay*d);
+    P._gmHealth=Math.max(0,P._gmHealth-TUNING.gmHealthDecay*dt);
     if(P._gmHealth<=0){
       P._gmAlive=false;P._gmHealth=0;
       ft2(P.x,P.y-2,'💀 Grand-mère est partie...','#8b0000');
@@ -4826,34 +4900,41 @@ function dWolves_single(w){
   if(nmw>.2){X.globalAlpha=nmw*.7;X.fillStyle='rgba(255,220,0,'+(nmw*.9)+')';const eyeR=(5+nmw*5)*SC;const sh2=spr.height/hd*SC;X.beginPath();X.arc(sx-3*SC*facing,sy-sh2/4,eyeR,0,Math.PI*2);X.fill();X.beginPath();X.arc(sx+3*SC*facing,sy-sh2/4,eyeR,0,Math.PI*2);X.fill();X.globalAlpha=1}
 }
 
-const _th={};
+const _th={};   // accumulated hits per tree tile "x,y" → damage
+const _thT={};  // time of last hit per tree tile (for fading the progress bar)
+// Progress bar over trees being chopped — instant feedback on how many hits remain
+function dChopProgress(){
+  for(const hk in _th){
+    if(!_th[hk])continue;
+    if(gt-(_thT[hk]||0)>6)continue; // fade out: only show recently-hit trees
+    const ci=hk.indexOf(','),tx=+hk.slice(0,ci),ty=+hk.slice(ci+1);
+    const tile=map[ty]&&map[ty][tx];
+    const ess=ESS[tile];
+    if(!ess){delete _th[hk];delete _thT[hk];continue}
+    const pct=Math.min(1,_th[hk]/ess.hp);
+    const sx=(tx+.5-smCam.x)*T*SC,sy=(ty-smCam.y)*T*SC;
+    if(sx<-40||sy<-40||sx>CV.width+40||sy>CV.height+40)continue;
+    const bw=24*SC,bh=3*SC;
+    X.fillStyle='rgba(5,10,8,.75)';X.fillRect(sx-bw/2-SC,sy-8*SC-SC,bw+2*SC,bh+2*SC);
+    X.fillStyle='#2a1e10';X.fillRect(sx-bw/2,sy-8*SC,bw,bh);
+    X.fillStyle=pct<.5?'#c9a86c':pct<.85?'#e9c46a':'#74c69d';
+    X.fillRect(sx-bw/2,sy-8*SC,bw*pct,bh);
+    // Hits remaining
+    const left=Math.max(1,Math.ceil((ess.hp-_th[hk])/Math.max(1,P.pow)));
+    X.font=`bold ${6*SC}px monospace`;X.textAlign='center';
+    X.fillStyle='#d8f3dc';X.fillText(''+left,sx+bw/2+5*SC,sy-8*SC+bh);
+  }
+}
 function updP2(d){
   // Shop toggle — detect which building is nearby
-  // P key = plant sapling on adjacent stump
-  if(K.KeyP){K.KeyP=false;
-    try{
-      const dirs2=[[0,-1],[1,0],[0,1],[-1,0]];
-      const fi=Math.max(0,Math.min(3,P.f||0));
-      const dd2=dirs2[fi];
-      const ptx=Math.floor(P.x+dd2[0]),pty=Math.floor(P.y+dd2[1]);
-      if(ptx>=0&&pty>=0&&ptx<MW&&pty<MH){
-        if(canPlantSapling(ptx,pty)){
-          plantSapling(ptx,pty);
-        }else if(map[pty]&&map[pty][ptx]===TT.ST){
-          ft2(P.x,P.y,'Pas assez d\'or (5)','#e74c3c');
-        }else{
-          ft2(P.x,P.y,'Pas de souche (face une souche)','#aaa');
-        }
-      }
-    }catch(err){console.error('Plant error:',err)}
-  }
   // R key = perform purification ritual (on corrupted stumps or near sacred trees)
   if(K.KeyR){K.KeyR=false;
     try{performRitual()}catch(err){console.error('Ritual error:',err)}
   }
-  // P key = plant seed
+  // P key = plant seed / Arbre-Chant
   if(K.KeyP){K.KeyP=false;
-    const ptx2=Math.floor(P.x+[0,1,0,-1][P.f]),pty2=Math.floor(P.y+[-1,0,1,0][P.f]);
+    const fi=Math.max(0,Math.min(3,P.f||0));
+    const ptx2=Math.floor(P.x+[0,1,0,-1][fi]),pty2=Math.floor(P.y+[-1,0,1,0][fi]);
     if(P._hasArbreChantSeed){
       plantArbreChant(ptx2,pty2);
     }else if(P.seeds>0){
@@ -4863,6 +4944,8 @@ function updP2(d){
       ft2(P.x,P.y,'Pas de graines (parle au Jardinier)','#e9c46a');
     }
   }
+  // Space also advances active dialogue (smoother than clicking the button)
+  if(shopOn&&K.Space&&document.getElementById('dlg').style.display==='block'){K.Space=false;advanceDialogue();return;}
     if(K.KeyE){K.KeyE=false;
     // If dialogue is active, advance it
     if(shopOn && document.getElementById('dlg').style.display==='block'){advanceDialogue();return;}
@@ -4963,8 +5046,8 @@ function updP2(d){
           }
           html+='<div class="si" style="color:#6ab8d4;font-size:9px;padding:4px">L\'eau coule vers le sud, vers le village...</div>';
           si2.innerHTML=html;
-          // Also trigger river-seen for architect
-          if(!P._riverSeen){P._riverSeen=true;ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');spawnArchitect()}
+          // First river sighting hint
+          if(!P._riverSeen){P._riverSeen=true;ft2(P.x,P.y-1.5,'🦫 Un castor bâtisseur vit près des rivières...','#b58863')}
           return;
         }
       }
@@ -4995,7 +5078,9 @@ function updP2(d){
     P._corrDmgT=(P._corrDmgT||0)+d;
     if(_localCorr>0.8&&P._corrDmgT>8&&P.iv<=0){P._corrDmgT=0;hurtP(1,.5,.15,.2,'#b266ff',4)}
   }else{P._corrStaDebuff=0;P._corrDmgT=0}
-  if(K.KeyC&&P._hasDash&&P.sta>TUNING.dashStaCost&&P.dc<=0&&(mx||my)){K.KeyC=false;P.dc=.5;P.dt=.2;P.sta-=TUNING.dashStaCost;SESSION.staminaDumped+=TUNING.dashStaCost}
+  // Note: don't consume K.KeyC here — the dash-attack skill (C+Space) needs to see C held; P.dc cooldown prevents re-trigger
+  const dashCost=P._dashMastery?Math.max(15,TUNING.dashStaCost-15):TUNING.dashStaCost;
+  if(K.KeyC&&P._hasDash&&P.sta>dashCost&&P.dc<=0&&(mx||my)){P.dc=.5;P.dt=.2;P.sta-=dashCost;SESSION.staminaDumped+=dashCost;sp(P.x,P.y,'#9ad1ff',5)}
   if(P.dt>0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult}
   if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
@@ -5051,10 +5136,10 @@ function updP2(d){
     // Sacred mini-boss hit detection
     hitSacredMiniBoss(P.x+dd[0]*.5,P.y+dd[1]*.5,P.pow);
     // Lateral boss hit detection
-    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Arbre-Pieuvre');logEvent('BOSS','Arbre-Pieuvre vaincu')}}}
-    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Ours Ancestral');logEvent('BOSS','Ours Ancestral vaincu')}}}
+    if(bossEast && !bossEast.defeated){const bex=bossEast.x-(P.x+dd[0]),bey=bossEast.y-(P.y+dd[1]);if(Math.sqrt(bex*bex+bey*bey)<3){bossEast.hp-=P.pow;bossEast.ht=.3;shake=.3;sp(bossEast.x,bossEast.y,'#40ff80',8);ft2(bossEast.x,bossEast.y-1,'-'+P.pow,'#40ff80');if(bossEast.hp<=0){bossEast.defeated=true;P._bossEastDefeated=true;rootHazards.length=0;bossProjs.length=0;ft2(bossEast.x,bossEast.y-2,'ARBRE-PIEUVRE VAINCU !','#ffd700');sp(bossEast.x,bossEast.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Arbre-Pieuvre');logEvent('BOSS','Arbre-Pieuvre vaincu')}}}
+    if(bossWest && !bossWest.defeated){const bwx=bossWest.x-(P.x+dd[0]),bwy=bossWest.y-(P.y+dd[1]);if(Math.sqrt(bwx*bwx+bwy*bwy)<2.5){bossWest.hp-=P.pow;bossWest.ht=.3;shake=.3;sp(bossWest.x,bossWest.y,'#ffaa40',8);ft2(bossWest.x,bossWest.y-1,'-'+P.pow,'#ffaa40');if(bossWest.hp<=0){bossWest.defeated=true;P._bossWestDefeated=true;rootHazards.length=0;bossProjs.length=0;ft2(bossWest.x,bossWest.y-2,'OURS ANCESTRAL VAINCU !','#ffd700');sp(bossWest.x,bossWest.y,'#ffd700',25);shake=1.5;P.g+=100;SESSION.totalGoldEarned+=100;addMaitrise(8);SESSION.bossesDefeated.push('Ours Ancestral');logEvent('BOSS','Ours Ancestral vaincu')}}}
     // Guardian hit detection
-    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;P._guardianFought=true;addMaitrise(10);ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2;SESSION.bossesDefeated.push('Gardien');logEvent('BOSS','Gardien vaincu')}}}
+    if(guardian && !guardian.defeated){const gx=guardian.x-(P.x+dd[0]),gy=guardian.y-(P.y+dd[1]);if(Math.sqrt(gx*gx+gy*gy)<2.5){guardian.hp-=P.pow;guardian.ht=.3;shake=.3;sp(guardian.x,guardian.y,'#ff6b6b',8);ft2(guardian.x,guardian.y-1,'-'+P.pow,'#ff6b6b');if(guardian.hp<=0){guardian.defeated=true;P._guardianDefeated=true;P._guardianFought=true;rootHazards.length=0;bossProjs.length=0;addMaitrise(10);ft2(guardian.x,guardian.y-2,'GARDIEN VAINCU !','#ffd700');sp(guardian.x,guardian.y,'#ffd700',25);shake=2;SESSION.bossesDefeated.push('Gardien');logEvent('BOSS','Gardien vaincu')}}}
     if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&isT(map[ty][tx])){
       const tile=map[ty][tx],ess=ESS[tile];if(!ess)return;
       // === PRIMORDIAL TREE SPECIAL HANDLING ===
@@ -5113,7 +5198,7 @@ function updP2(d){
         ft2(P.x,P.y-1,'⚠️ Hache fragile !','#e9c46a');
       }
       const need=ess.hp;
-      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/4)):P.pow;
+      const hk=tx+','+ty;if(!_th[hk])_th[hk]=0;_th[hk]+=isDull?Math.max(1,Math.floor(P.pow/4)):P.pow;_thT[hk]=gt;
       sp(tx+.5,ty+.5,'#8B6914',4);shake=.07;
       // Show name on first hit
       if(_th[hk]===P.pow)ft2(tx+.5,ty-.5,ess.name,'#b7e4c7');
@@ -5150,12 +5235,12 @@ function updP2(d){
           // Trigger rare wood arrival check for luthier
           if(!P._luthierArrived)checkLuthierArrival(tile);
         }
-        if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
-        // Player-planted trees regrow automatically in 1 cycle
-        if(regrowMap[ty]?._planted){
-          regrowMap[ty][tx]={ess:tile,time:gt+300}; // ~1 day/night cycle (300s)
-        }
-        map[ty][tx]=TT.ST;delete _th[hk];cuts++;sfxTreeFall();SESSION.totalCuts++;SESSION.cutsByType[tile]=(SESSION.cutsByType[tile]||0)+1;
+        // Player-planted trees regrow automatically in ~1 day/night cycle (300s)
+        const wasPlanted=!!(regrowMap[ty]&&regrowMap[ty][tx]&&regrowMap[ty][tx].planted);
+        if(!regrowMap[ty])regrowMap[ty]=[];
+        if(wasPlanted)regrowMap[ty][tx]={ess:tile,time:gt+300,planted:true};
+        else if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
+        map[ty][tx]=TT.ST;delete _th[hk];delete _thT[hk];cuts++;sfxTreeFall();SESSION.totalCuts++;SESSION.cutsByType[tile]=(SESSION.cutsByType[tile]||0)+1;
         // Scoring: Destruction +1 per tree, +5 for sacred
         addDestruction(ess.sacred?5:1);
         // Check luthier arrival on rare wood
@@ -5170,6 +5255,10 @@ function updP2(d){
         ents.forEach(e=>{if(Math.sqrt((e.x-tx)**2+(e.y-ty)**2)<12)e.mt=0});
       }
     }
+  }else if(K.Space&&P.ct<=0&&P.sta<=TUNING.cutStaCost){
+    // Out-of-stamina feedback — before, pressing Space silently did nothing
+    P._tiredT=Math.max(0,(P._tiredT||0)-d);
+    if(P._tiredT<=0){P._tiredT=1;ft2(P.x,P.y-.8,'💨 Essoufflé...','#7fb2d6');sfxNoise(.05,.1)}
   }
   // Track deepest biome reached
   const prevBiome=P._deepestBiome;
@@ -5333,7 +5422,7 @@ function updShop(){
     items=[
       {n:'🍖 Repas (soins max)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️','#e74c3c')}},
       {n:`🔥 Acheter 3 torches (stock: ${P._torches||0})`,c:5,a:()=>{P._torches=(P._torches||0)+3;ft2(P.x,P.y,'🔥+3 Torches','#e9c46a');updShop()}},
-      {n:P._torchActive?'🔥 Éteindre la torche':'🔥 Allumer une torche',c:0,a:()=>{if(!P._torchActive&&(P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}else{ft2(P.x,P.y,'Pas de torches!','#e74c3c')};updShop()}},
+      {n:P._torchActive?'🔥 Éteindre la torche':'🔥 Allumer une torche',c:0,lb:P._torchActive?'Éteindre':'Allumer',en:P._torchActive||(P._torches||0)>0,a:()=>{if(!P._torchActive&&(P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}else{ft2(P.x,P.y,'Pas de torches!','#e74c3c')};updShop()}},
       {n:`📦 Sac +${TUNING.bagUpgradeAmount} (${P.invCap}→${P.invCap+TUNING.bagUpgradeAmount})`,c:P.invCap<30?TUNING.bagUpgradeCost1:P.invCap<45?TUNING.bagUpgradeCost2:TUNING.bagUpgradeCost3,a:()=>{P.invCap+=TUNING.bagUpgradeAmount;ft2(P.x,P.y,`📦+${TUNING.bagUpgradeAmount}`,'#8B6914')}},
       {n:`💧 Vendre sève (${P.sap}→${P.sap*TUNING.sapSellTaverne} or)`,c:0,cs:1,a:()=>{if(P.sap>0){const g=P.sap*TUNING.sapSellTaverne;P.g+=g;SESSION.totalGoldEarned+=g;ft2(P.x,P.y,`💰+${g}`,'#b266ff');P.sap=0}}},
     ];
@@ -5364,8 +5453,8 @@ function updShop(){
     const encUnlocked = P.mushrooms >= TUNING.mushsForEncens;
     items=[
       {n:`❤️ +2 PV max (${P.mhp}→${P.mhp+2})`,c:P.mhp<=5?80:200,a:()=>{P.mhp+=2;P.hp=P.mhp;ft2(P.x,P.y,'❤️+2','#e74c3c');updShop()}},
-      {n:`🌿 Tonique vital: +1 PV (5 herbes, stock: ${P.herbs})`,c:P.herbs>=5?0:9999,a:()=>{if(P.herbs>=5){P.herbs-=5;P.mhp+=1;P.hp=P.mhp;ft2(P.x,P.y,'❤️+1 (herbes)','#52b788');updShop()}}},
-      {n:`🍄 Élixir d'écorce: résistance +1 (5 champignons, stock: ${P.mushrooms})`,c:P.mushrooms>=5?0:9999,a:()=>{if(P.mushrooms>=5){P.mushrooms-=5;P._armor=(P._armor||0)+1;ft2(P.x,P.y,`🛡️ Résistance: ${P._armor}`,`#b088d0`);updShop()}}},
+      {n:`🌿 Tonique vital: +1 PV (5 herbes, stock: ${P.herbs})`,c:P.herbs>=5?0:9999,lb:P.herbs>=5?'Boire':'—',a:()=>{if(P.herbs>=5){P.herbs-=5;P.mhp+=1;P.hp=P.mhp;ft2(P.x,P.y,'❤️+1 (herbes)','#52b788');updShop()}}},
+      {n:`🍄 Élixir d'écorce: résistance +1 (5 champignons, stock: ${P.mushrooms})`,c:P.mushrooms>=5?0:9999,lb:P.mushrooms>=5?'Boire':'—',a:()=>{if(P.mushrooms>=5){P.mushrooms-=5;P._armor=(P._armor||0)+1;ft2(P.x,P.y,`🛡️ Résistance: ${P._armor}`,`#b088d0`);updShop()}}},
       {n:`   🛡️ Résistance actuelle: ${P._armor||0} (réduit les dégâts de ${P._armor||0})`,c:9999,a:()=>{}},
       potUnlocked
         ? {n:`🧪 Potion ×1 (stock: ${P._potions||0})`,c:12,a:()=>{P._potions=(P._potions||0)+1;SESSION.potionsBought++;ft2(P.x,P.y,'🧪+1','#e74c3c');logEvent('ITEM','Potion achetée',{stock:P._potions})}}
@@ -5380,7 +5469,7 @@ function updShop(){
     ];
     // Ylva's alternative remedy: sacred sap for grandmother (free but requires sacred tree sap)
     if(P._doctorArrived&&P._gmAlive&&P.sap>=5&&P._sacredLore&&P._sacredLore.length>=4){
-      items.push({n:'🌿 Remède de sève sacrée pour grand-mère (5 sève)',c:0,a:()=>{
+      items.push({n:'🌿 Remède de sève sacrée pour grand-mère (5 sève)',c:0,lb:'Donner',en:P.sap>=5,a:()=>{
         if(P.sap>=5){P.sap-=5;P._gmHealth=Math.min(100,P._gmHealth+TUNING.gmSacredSapHeal);addRestauration(3);ft2(P.x,P.y,`🌿 +${TUNING.gmSacredSapHeal} santé grand-mère`,'#52b788');ft2(P.x,P.y-1,'La sève de la forêt guérit...','#74c69d');updShop()}
       }});
     }
@@ -5391,7 +5480,7 @@ function updShop(){
     const gmCol=gmH>60?'#52b788':gmH>30?'#e9c46a':'#e74c3c';
     const gmStatus=!P._gmAlive?'💀 Décédée':gmH>75?'😊 En forme':gmH>50?'😐 Fatiguée':gmH>25?'😰 Malade':'🛏️ Très faible';
     items=[
-      {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(pas fatigué)'}`,c:isNight?0:9999,a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700');spawnDoctorIfReady()}},
+      {n:`🛏️ Dormir jusqu'à l'aube ${isNight?'':'(pas fatigué)'}`,c:isNight?0:9999,lb:isNight?'Dormir':'—',a:()=>{dayPhase=0.20;P.hp=P.mhp;P.sta=P.msta;ft2(P.x,P.y,'☀️ Reposé!','#ffd700');spawnDoctorIfReady()}},
       {n:'══ COFFRE ══',c:9999,a:()=>{}},
     ];
     // Per-type wood transfer: SAC → COFFRE
@@ -5400,27 +5489,27 @@ function updShop(){
     if(bagTypes.length>0){
       items.push({n:'── Sac → Coffre (déposer) ──',c:9999,a:()=>{}});
       bagTypes.forEach(tt=>{const amt=P.woodByType[tt];const eName=ESS[tt]?ESS[tt].name:('Type '+tt);
-        items.push({n:`  ➡️ Déposer ${amt}× ${eName}`,c:0,a:()=>{
+        items.push({n:`  ➡️ Déposer ${amt}× ${eName}`,c:0,en:amt>0,lb:'Déposer',a:()=>{
           if(!P.chestWoodByType)P.chestWoodByType={};
           P.chestWoodByType[tt]=(P.chestWoodByType[tt]||0)+amt;P.chestWood+=amt;
-          P.w-=amt;P.wv=Math.max(0,(P.wv||0)-amt);P.woodByType[tt]=0;updShop()},wd:1});
+          P.w-=amt;P.wv=Math.max(0,(P.wv||0)-amt);P.woodByType[tt]=0;updShop()}});
       });
     }
     if(chestTypes.length>0){
       items.push({n:'── Coffre → Sac (récupérer) ──',c:9999,a:()=>{}});
       chestTypes.forEach(tt=>{const amt=P.chestWoodByType[tt];const eName=ESS[tt]?ESS[tt].name:('Type '+tt);
         const maxTake=Math.min(amt,Math.floor(invFree()/RES_WEIGHT.wood));
-        items.push({n:`  ⬅️ Récupérer ${amt}× ${eName}${maxTake<amt?' (place: '+maxTake+')':''}`,c:0,a:()=>{
+        items.push({n:`  ⬅️ Récupérer ${amt}× ${eName}${maxTake<amt?' (place: '+maxTake+')':''}`,c:0,en:maxTake>0,lb:'Prendre',a:()=>{
           const take=Math.min(amt,Math.floor(invFree()/RES_WEIGHT.wood));
           if(take>0){P.w+=take;if(!P.woodByType)P.woodByType={};P.woodByType[tt]=(P.woodByType[tt]||0)+take;
           P.chestWoodByType[tt]-=take;P.chestWood-=take;
-          if(P.chestWoodByType[tt]<=0)delete P.chestWoodByType[tt];updShop()}},wd:1});
+          if(P.chestWoodByType[tt]<=0)delete P.chestWoodByType[tt];updShop()}}});
       });
     }
     // Sap
     items.push({n:'── Sève ──',c:9999,a:()=>{}});
-    items.push({n:`  ➡️ Déposer sève (sac: ${P.sap}, coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.sap>0){P.chestSap+=P.sap;ft2(P.x,P.y,`📦+${P.sap} sève`,'#b088d0');P.sap=0;updShop()}}});
-    items.push({n:`  ⬅️ Récupérer sève (coffre: ${P.chestSap})`,c:0,cs:1,a:()=>{if(P.chestSap>0){const take=Math.min(P.chestSap,Math.floor(invFree()/RES_WEIGHT.sap));if(take>0){P.sap+=take;P.chestSap-=take;ft2(P.x,P.y,`💧+${take}`,'#b088d0');updShop()}}}});
+    items.push({n:`  ➡️ Déposer sève (sac: ${P.sap}, coffre: ${P.chestSap})`,c:0,en:P.sap>0,lb:'Déposer',a:()=>{if(P.sap>0){P.chestSap+=P.sap;ft2(P.x,P.y,`📦+${P.sap} sève`,'#b088d0');P.sap=0;updShop()}}});
+    items.push({n:`  ⬅️ Récupérer sève (coffre: ${P.chestSap})`,c:0,en:P.chestSap>0&&invFree()>=RES_WEIGHT.sap,lb:'Prendre',a:()=>{if(P.chestSap>0){const take=Math.min(P.chestSap,Math.floor(invFree()/RES_WEIGHT.sap));if(take>0){P.sap+=take;P.chestSap-=take;ft2(P.x,P.y,`💧+${take}`,'#b088d0');updShop()}}}});
     // Grandmother health status
     if(P._doctorArrived&&P._gmAlive) items.push({n:`   👵 Grand-mère: ${gmStatus} (${gmH}%)`,c:9999,a:()=>{}});
     else if(!P._gmAlive) items.push({n:'   👵 Le lit est vide. La maison est silencieuse.',c:9999,a:()=>{}});
@@ -5440,7 +5529,7 @@ function updShop(){
     items=[
       {n:`📜 Lore collectée: ${loreCount}/${SACRED_LORE.length}`,c:9999,a:()=>{}},
       {n:'📖 Indice prochain arbre sacré',c:15,a:()=>{ft2(P.x,P.y,'Les arbres sacrés brillent au crépuscule','#daa520')}},
-      {n:'🔬 Analyser sève (bonus +50% revente)',c:loreCount>=4?0:9999,a:()=>{P._sapBonus=true;ft2(P.x,P.y,'🔬 Sève analysée!','#b266ff')}},
+      {n:'🔬 Analyser sève (bonus +50% revente)',c:loreCount>=4?0:9999,lb:loreCount>=4?'Analyser':'—',a:()=>{P._sapBonus=true;ft2(P.x,P.y,'🔬 Sève analysée!','#b266ff')}},
     ];
   }else if(t===TT.HERM){
     // Generic lateral biome hermit
@@ -5454,8 +5543,8 @@ function updShop(){
     // Estelle — Combat training
     const t2=P._estelleTraining||0;
     items=[];
-    if(!P._hasDash) items.push({n:'💨 Apprendre: Dash (C + direction)',c:15,a:()=>{P._hasDash=true;P._estelleTraining=Math.max(t2,1);addMaitrise(2);ft2(P.x,P.y,'💨 Dash appris!','#cc4444');updShop()}});
-    if(P._hasDash&&t2<1) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+30;addMaitrise(3);ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
+    if(!P._dashMastery) items.push({n:`💨 Maîtrise du dash (coût stamina ${TUNING.dashStaCost}→${Math.max(15,TUNING.dashStaCost-15)})`,c:15,a:()=>{P._dashMastery=true;P._estelleTraining=Math.max(t2,1);addMaitrise(2);ft2(P.x,P.y,'💨 Dash maîtrisé!','#cc4444');updShop()}});
+    if(t2<1) items.push({n:'⚡ Entraînement: Stamina +30',c:30,a:()=>{P._estelleTraining=1;P.msta+=30;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+30;addMaitrise(3);ft2(P.x,P.y,'⚡ Stamina +30!','#cc4444');updShop()}});
     if(t2>=1&&!P._hasSkillCircular) items.push({n:'⚔️ Apprendre: Attaque circulaire (ESPACE×2)',c:60,a:()=>{P._hasSkillCircular=true;P._estelleTraining=2;addMaitrise(3);ft2(P.x,P.y,'⚔️ Attaque circulaire!','#cc4444');updShop()}});
     if(t2>=2&&!P._hasSkillDashAttack) items.push({n:'💨 Apprendre: Attaque dashée (C+ESPACE)',c:100,a:()=>{P._hasSkillDashAttack=true;P._estelleTraining=3;addMaitrise(3);ft2(P.x,P.y,'💨 Attaque dashée!','#cc4444');updShop()}});
     if(t2>=3&&!P._hasSkillCounter) items.push({n:'🛡️ Apprendre: Contre-attaque (timing)',c:150,a:()=>{P._hasSkillCounter=true;P._estelleTraining=4;addMaitrise(3);ft2(P.x,P.y,'🛡️ Contre-attaque!','#cc4444');updShop()}});
@@ -5473,7 +5562,7 @@ function updShop(){
     // Ermite Jardinier — Seeds & quest
     items=[];
     if(!P._jardinierQuestActive){
-      items.push({n:`🌱 Recevoir des graines (${TUNING.jardinierSeedCount} graines)`,c:0,a:()=>{
+      items.push({n:`🌱 Recevoir des graines (${TUNING.jardinierSeedCount} graines)`,c:0,lb:'Recevoir',a:()=>{
         P.seeds+=TUNING.jardinierSeedCount;
         P._jardinierQuestActive=true;
         ft2(P.x,P.y,`🌱 +${TUNING.jardinierSeedCount} graines!`,'#52b788');
@@ -5486,7 +5575,7 @@ function updShop(){
       items.push({n:`   🌱 Plantées: ${planted}/${needed}`,c:9999,a:()=>{}});
       items.push({n:`   📦 Graines en sac: ${P.seeds}`,c:9999,a:()=>{}});
       if(planted>=needed&&!P._hasArbreChantSeed){
-        items.push({n:'🌳 Recevoir la graine d\'Arbre-Chant !',c:0,a:()=>{
+        items.push({n:'🌳 Recevoir la graine d\'Arbre-Chant !',c:0,lb:'Recevoir',a:()=>{
           P._hasArbreChantSeed=true;
           P._jardinierQuestDone=true;
           ft2(P.x,P.y,'🌳 Graine d\'Arbre-Chant obtenue!','#daa520');
@@ -5496,15 +5585,15 @@ function updShop(){
       }
     }
     // Exchange herbs/mushrooms for seeds
-    if(P.herbs>=3) items.push({n:`🌿 Échanger 3 herbes → 5 graines (herbes: ${P.herbs})`,c:0,a:()=>{P.herbs-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
-    if(P.mushrooms>=3) items.push({n:`🍄 Échanger 3 champignons → 5 graines (champi: ${P.mushrooms})`,c:0,a:()=>{P.mushrooms-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
+    if(P.herbs>=3) items.push({n:`🌿 Échanger 3 herbes → 5 graines (herbes: ${P.herbs})`,c:0,lb:'Échanger',a:()=>{P.herbs-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
+    if(P.mushrooms>=3) items.push({n:`🍄 Échanger 3 champignons → 5 graines (champi: ${P.mushrooms})`,c:0,lb:'Échanger',a:()=>{P.mushrooms-=3;P.seeds+=5;ft2(P.x,P.y,'🌱+5 graines','#52b788');updShop()}});
     if(P._hasArbreChantSeed) items.push({n:'   🌳 Graine d\'Arbre-Chant en poche ! (P pour planter)',c:9999,a:()=>{}});
   }else if(t===TT.HERM_T){
     // Théodore (Ancien Maître-Artisan) — Legendary Axe restoration
     items=[];
     if(P._brokenAxeItem&&!P._tristeLiberated&&P._luthierMasterpiece){
       // Can restore the axe!
-      items.push({n:'⚔️ Restaurer la Hache Légendaire',c:0,a:()=>{
+      items.push({n:'⚔️ Restaurer la Hache Légendaire',c:0,lb:'Restaurer',a:()=>{
         P._tristeLiberated=true;
         P._legendaryAxeRestored=true;
         P._hasLegendaryAxe=true;
@@ -5527,7 +5616,7 @@ function updShop(){
     // Broken Legendary Axe pickup
     items=[];
     if(!P._brokenAxeFound){
-      items.push({n:'⚔️ Arracher la Hache de la souche',c:0,a:()=>{
+      items.push({n:'⚔️ Arracher la Hache de la souche',c:0,lb:'Arracher',a:()=>{
         P._brokenAxeFound=true;
         P._brokenAxeItem=true;
         map[Math.floor(P.y)][Math.floor(P.x)]=TT.G;
@@ -5589,7 +5678,7 @@ function updShop(){
     }
     items.push({n:'═══ CONSTRUIRE ═══',c:9999,a:()=>{}});
     if(P._hasBarricadePlan){
-      items.push({n:`🛡️ Installer une barricade au village (8 bûches, stock: ${P.w})`,c:0,a:()=>{doBuildBarricade();updShop()}});
+      items.push({n:`🛡️ Installer une barricade au village (8 bûches, stock: ${P.w})`,c:0,lb:'Installer',en:P.w>=8,a:()=>{doBuildBarricade();updShop()}});
       items.push({n:`   Barricades: ${P._barricadesBuilt||0}/10 · Protection: ${Math.floor(vilBarricadeLevel()*100)}%`,c:9999,a:()=>{}});
     }
     // Village unrest info
@@ -5615,7 +5704,7 @@ function updShop(){
       if(alreadyHas){
         items.push({n:`✅ ${id.instrument} (collecté)`,c:9999,a:()=>{}});
       }else{
-        items.push({n:`🎵 Fabriquer ${id.instrument} (${id.cost}× ${id.name}, en sac: ${held})`,c:0,a:()=>{
+        items.push({n:`🎵 Fabriquer ${id.instrument} (${id.cost}× ${id.name}, en sac: ${held})`,c:0,en:held>=id.cost,lb:'Fabriquer',a:()=>{
           if(held>=id.cost){
             P.woodByType[id.tt]-=id.cost;
             P.w-=id.cost;
@@ -5627,13 +5716,13 @@ function updShop(){
           }else{
             ft2(P.x,P.y,`Pas assez de ${id.name} (${held}/${id.cost})`,'#e74c3c');
           }
-        },wd:1});
+        }});
       }
     });
     items.push({n:`   🎻 Collection: ${insts.length}/${instrumentDefs.length} instruments`,c:9999,a:()=>{}});
     // Final quest: needs Arbre-Chant wood
     if(insts.length>=3&&!P._luthierFinalQuest){
-      items.push({n:'🌟 Mission finale: Le chef-d\'œuvre',c:0,a:()=>{
+      items.push({n:'🌟 Mission finale: Le chef-d\'œuvre',c:0,lb:'Écouter',a:()=>{
         P._luthierFinalQuest=true;
         ft2(P.x,P.y,'Le luthier rêve d\'un instrument en bois sacré...','#d4a017');
         updShop();
@@ -5642,14 +5731,14 @@ function updShop(){
     if(P._luthierFinalQuest&&!P._luthierMasterpiece){
       const chantWood=(P.woodByType||{})[TT.ARBRE_CHANT]||0;
       if(chantWood>0){
-        items.push({n:'🌟 Créer le Chef-d\'œuvre (bois d\'Arbre-Chant)',c:0,a:()=>{
+        items.push({n:'🌟 Créer le Chef-d\'œuvre (bois d\'Arbre-Chant)',c:0,en:chantWood>0,lb:'Créer',a:()=>{
           P.woodByType[TT.ARBRE_CHANT]-=1;P.w--;
           P._luthierMasterpiece=true;
           P._instruments.push({name:'Chef-d\'œuvre sacré',wood:TT.ARBRE_CHANT});
           ft2(P.x,P.y,'🌟 CHEF-D\'ŒUVRE CRÉÉ !','#ffd700');
           sfxLore();shake=.8;sp(P.x,P.y,'#ffd700',20);
           updShop();
-        },wd:1});
+        }});
       }else{
         items.push({n:'   🌟 Besoin de bois d\'Arbre-Chant (coupe ton Arbre-Chant)',c:9999,a:()=>{}});
       }
@@ -5732,19 +5821,19 @@ function updShop(){
       items.push({n:'═══ CONTRAT SPÉCIAL ═══',c:9999,a:()=>{}});
       items.push({n:'🪤 Contrat: Éliminer l\'Arbre-Pieuvre (Est)',c:9999,a:()=>{}});
       items.push({n:'   💰 Récompense: 500 or',c:9999,a:()=>{}});
-      items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractEast='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Arbre-Pieuvre','#ffd700');ft2(P.x,P.y-1,'L\'est de la forêt vous attend...','#aaa')}});
-      items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractEast='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric fronce les sourcils.','#e74c3c')}});
-    }else if(P._bossContractEast==='accepted'&&bossEast&&bossEast.defeated){
-      items.push({n:'🏆 Réclamer: Arbre-Pieuvre éliminé (500 or)',c:0,a:()=>{P._bossContractEast='done';P.g+=500;SESSION.totalGoldEarned+=500;addDestruction(8);ft2(P.x,P.y,'💰+500','#ffd700');sfxContract()}});
+      items.push({n:'✅ Accepter le contrat',c:0,lb:'Accepter',a:()=>{P._bossContractEast='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Arbre-Pieuvre','#ffd700');ft2(P.x,P.y-1,'L\'est de la forêt vous attend...','#aaa')}});
+      items.push({n:'❌ Refuser',c:0,lb:'Refuser',a:()=>{P._bossContractEast='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric fronce les sourcils.','#e74c3c')}});
+    }else if(P._bossContractEast==='accepted'&&(P._bossEastDefeated||(bossEast&&bossEast.defeated))){
+      items.push({n:'🏆 Réclamer: Arbre-Pieuvre éliminé (500 or)',c:0,lb:'Réclamer',a:()=>{P._bossContractEast='done';P.g+=500;SESSION.totalGoldEarned+=500;addDestruction(8);ft2(P.x,P.y,'💰+500','#ffd700');sfxContract()}});
     }
     if(P._bossContractWest==='offered'){
       items.push({n:'═══ CONTRAT SPÉCIAL ═══',c:9999,a:()=>{}});
       items.push({n:'🐻 Contrat: Éliminer l\'Ours Ancestral (Ouest)',c:9999,a:()=>{}});
       items.push({n:'   💰 Récompense: 600 or',c:9999,a:()=>{}});
-      items.push({n:'✅ Accepter le contrat',c:0,a:()=>{P._bossContractWest='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Ours Ancestral','#ffd700');ft2(P.x,P.y-1,'L\'ouest de la forêt vous attend...','#aaa')}});
-      items.push({n:'❌ Refuser',c:0,a:()=>{P._bossContractWest='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric serre les dents.','#e74c3c')}});
-    }else if(P._bossContractWest==='accepted'&&bossWest&&bossWest.defeated){
-      items.push({n:'🏆 Réclamer: Ours Ancestral éliminé (600 or)',c:0,a:()=>{P._bossContractWest='done';P.g+=600;SESSION.totalGoldEarned+=600;addDestruction(8);ft2(P.x,P.y,'💰+600','#ffd700');sfxContract()}});
+      items.push({n:'✅ Accepter le contrat',c:0,lb:'Accepter',a:()=>{P._bossContractWest='accepted';addDestruction(5);ft2(P.x,P.y,'📜 Contrat accepté: Ours Ancestral','#ffd700');ft2(P.x,P.y-1,'L\'ouest de la forêt vous attend...','#aaa')}});
+      items.push({n:'❌ Refuser',c:0,lb:'Refuser',a:()=>{P._bossContractWest='refused';addComprehension(3);ft2(P.x,P.y,'📜 Contrat refusé','#52b788');ft2(P.x,P.y-1,'Aldric serre les dents.','#e74c3c')}});
+    }else if(P._bossContractWest==='accepted'&&(P._bossWestDefeated||(bossWest&&bossWest.defeated))){
+      items.push({n:'🏆 Réclamer: Ours Ancestral éliminé (600 or)',c:0,lb:'Réclamer',a:()=>{P._bossContractWest='done';P.g+=600;SESSION.totalGoldEarned+=600;addDestruction(8);ft2(P.x,P.y,'💰+600','#ffd700');sfxContract()}});
     }
     // 5. Final Contract (refusable — cut the Primordial Tree)
     if(P._finalContractState==='offered'){
@@ -5752,8 +5841,8 @@ function updShop(){
       items.push({n:'🌳 Couper l\'Arbre Primordial',c:9999,a:()=>{}});
       items.push({n:'   💰 Récompense: 2000 or + soins pour grand-mère',c:9999,a:()=>{}});
       items.push({n:'   ⚠️ « C\'est un contrat sans retour. »',c:9999,a:()=>{}});
-      items.push({n:'✅ Accepter le contrat final',c:0,a:()=>{P._finalContractState='accepted';addDestruction(10);ft2(P.x,P.y,'📜 Contrat final accepté','#8b0000');ft2(P.x,P.y-1,'Le cœur de la forêt...','#aaa')}});
-      items.push({n:'❌ Refuser catégoriquement',c:0,a:()=>{P._finalContractState='refused';addComprehension(5);addRestauration(3);ft2(P.x,P.y,'📜 Contrat final refusé!','#52b788');ft2(P.x,P.y-1,'« Vous le regretterez. »','#e74c3c')}});
+      items.push({n:'✅ Accepter le contrat final',c:0,lb:'Accepter',a:()=>{P._finalContractState='accepted';addDestruction(10);ft2(P.x,P.y,'📜 Contrat final accepté','#8b0000');ft2(P.x,P.y-1,'Le cœur de la forêt...','#aaa')}});
+      items.push({n:'❌ Refuser catégoriquement',c:0,lb:'Refuser',a:()=>{P._finalContractState='refused';addComprehension(5);addRestauration(3);ft2(P.x,P.y,'📜 Contrat final refusé!','#52b788');ft2(P.x,P.y-1,'« Vous le regretterez. »','#e74c3c')}});
     }else if(P._finalContractState==='accepted'){
       items.push({n:'📜 Contrat final: Couper l\'Arbre Primordial (en cours)',c:9999,a:()=>{}});
     }else if(P._finalContractState==='refused'){
@@ -5800,37 +5889,43 @@ function updShop(){
   }
   const co=document.getElementById('si2');co.innerHTML='';
   items.forEach(it=>{
-    const isSell=it.c===0&&!it.cl&&!it.cd&&!it.cu&&!it.ce&&!it.ct&&!it.ca&&!it.wd;
-    const isLoan=it.cl;
-    const isDebt=it.cd;
-    const isUse=it.cu;
-    const isContract=it.ce;
-    const isDeliver=it.ct;
-    const isAbandon=it.ca;
-    const isWoodSell=it.wd;
+    // Item flags: cs=sap sell, wd=wood sell, cl=loan, cd=debt payment, cu=use consumable,
+    // ce=sign contract, ct=deliver contract, ca=abandon contract.
+    // Optional overrides: it.en (explicit enabled boolean), it.lb (explicit button label).
+    const isSapSell=!!it.cs;
+    const isLoan=!!it.cl;
+    const isDebt=!!it.cd;
+    const isUse=!!it.cu;
+    const isContract=!!it.ce;
+    const isDeliver=!!it.ct;
+    const isAbandon=!!it.ca;
+    const isWoodSell=!!it.wd;
+    const isPurchase=!isSapSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell&&it.c>0&&it.c<9999;
     let ok;
-    if(isWoodSell) ok=P.w>0;
-    else if(isSell) ok=it.cs?P.sap>0:P.w>0;
+    if(it.en!==undefined) ok=!!it.en;
+    else if(isWoodSell) ok=P.w>0;
+    else if(isSapSell) ok=P.sap>0;
     else if(isLoan) ok=true;
     else if(isDebt) ok=P._debt>0&&P.g>0;
     else if(isUse) ok=it.n.includes('Potions')?(P._potions||0)>0:(P._encensStock||0)>0;
     else if(isDeliver) ok=P._contract&&(P.woodByType[P._contract.type]||0)>0;
     else if(isAbandon) ok=true;
-    else if(isContract) ok=P.w>0;
+    else if(it.c===0) ok=true; // free/quest actions guard themselves internally
     else ok=P.g>=it.c&&it.c<9999;
     const d2=document.createElement('div');d2.className='si';
     let lbl;
-    if(isWoodSell)lbl='Vendre';
-    else if(isSell)lbl=it.cs?'Vendre':'Vendre';
+    if(it.lb!==undefined)lbl=it.lb;
+    else if(isWoodSell||isSapSell)lbl='Vendre';
     else if(isLoan)lbl='Emprunter';
     else if(isDebt)lbl='Payer';
     else if(isUse)lbl='Utiliser';
     else if(isDeliver)lbl='Livrer';
     else if(isAbandon)lbl='Annuler';
     else if(isContract)lbl='Signer';
+    else if(it.c===0)lbl='OK';
     else lbl=it.c>=9999?'—':it.c+' or';
     d2.innerHTML=`<span>${it.n}</span><button class="sb" ${ok?'':'disabled'}>${lbl}</button>`;
-    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(!isSell&&!isLoan&&!isDebt&&!isUse&&!isContract&&!isDeliver&&!isAbandon&&!isWoodSell){P.g-=it.c;SESSION.totalGoldSpent+=it.c}it.a();updShop()};
+    d2.querySelector('button').onclick=()=>{sfxMenuSelect();if(isPurchase){P.g-=it.c;SESSION.totalGoldSpent+=it.c}it.a();updShop()};
     co.appendChild(d2);
   });
 }
@@ -5865,7 +5960,7 @@ function respawn(){
 
 // ============ SAVE / LOAD SYSTEM ============
 const SAVE_KEY='lumberjack_fever_save';
-const SAVE_VER=1;
+const SAVE_VER=2; // v2: TT.LUTH moved 48→49 — old maps would render the luthier as a hermit
 let _saveTimer=0;
 
 function saveGame(){
@@ -5944,7 +6039,7 @@ function loadGame(){
   }catch(e){console.warn('Load failed:',e);return false}
 }
 
-function hasSave(){return !!localStorage.getItem(SAVE_KEY)}
+function hasSave(){try{const raw=localStorage.getItem(SAVE_KEY);return !!raw&&JSON.parse(raw).v===SAVE_VER}catch(e){return false}}
 function deleteSave(){localStorage.removeItem(SAVE_KEY)}
 function newGame(){deleteSave();location.reload()}
 
@@ -6686,6 +6781,9 @@ function mmReveal(){
   if(P._mapMixte)for(let y=100;y<170;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
   if(P._mapAncienne)for(let y=40;y<100;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
   if(P._mapPrimordiale)for(let y=0;y<40;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
+  // Lateral zones are x-bands, not y-bands
+  if(P._mapBoreal)for(let y=0;y<MH;y++)for(let x=0;x<86;x++)_mmRevealed[y][x]=1;
+  if(P._mapMarecage)for(let y=0;y<MH;y++)for(let x=171;x<MW;x++)_mmRevealed[y][x]=1;
   // Village always revealed
   for(let y=200;y<MH;y++)for(let x=0;x<MW;x++)_mmRevealed[y][x]=1;
 }
@@ -6817,8 +6915,8 @@ function dUI(){
   const hc=hp>50?'#52b788':hp>25?'#e9c46a':'#e74c3c';
   const used=invUsed(),cap=P.invCap,invPct=Math.min(100,used/cap*100);
   const invCol=invPct>90?'#e74c3c':invPct>70?'#e9c46a':'#8B6914';
-  const durMax=TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1);
-  const durPct=Math.max(0,P._axeDur/durMax*100);
+  const durMax=P._axeMaxDur||(TUNING.axeBaseDur+TUNING.axeDurPerLevel*(P.axe-1)+(P._axeDurLevel||0)*20);
+  const durPct=Math.min(100,Math.max(0,P._axeDur/durMax*100));
   const durCol=durPct>50?'#e9c46a':durPct>20?'#e67e22':'#e74c3c';
   let extra=`🪓 Niv.${P.axe} <span class="br" style="width:50px;display:inline-block;vertical-align:middle"><span class="bf" style="width:${durPct}%;background:${durCol}"></span></span>${P._axeDur<1?' ⚠️':''} · 📏 ${depth}m · 🌲 ${biome}`;
   if(P._sacredLore&&P._sacredLore.length>0) extra+=` · 📜 ${P._sacredLore.length}/${SACRED_LORE.length}`;
@@ -7085,8 +7183,8 @@ function drawBossWest(){
 // Trigger lateral bosses when player enters arena
 function checkLateralBosses(){
   const be=window._bossEast,bw=window._bossWest;
-  if(be && !bossEast && Math.abs(P.x-be.x)<8 && Math.abs(P.y-be.y)<8) spawnBossEast();
-  if(bw && !bossWest && Math.abs(P.x-bw.x)<8 && Math.abs(P.y-bw.y)<8) spawnBossWest();
+  if(be && !bossEast && !P._bossEastDefeated && Math.abs(P.x-be.x)<8 && Math.abs(P.y-be.y)<8) spawnBossEast();
+  if(bw && !bossWest && !P._bossWestDefeated && Math.abs(P.x-bw.x)<8 && Math.abs(P.y-bw.y)<8) spawnBossWest();
 }
 
 // ============ GUARDIAN BOSS ============
@@ -7449,7 +7547,7 @@ function doPrimCut(){
   if(P._primHits>=5){
     P._primCut=true;P._ending='cut';
     // Find and replace the primordial tree tile
-    const pp=window._primPos||{x:CX,y:10};
+    const pp=window._primPos||{x:128,y:10};
     if(map[pp.y])map[pp.y][pp.x]=TT.ST;
     triggerEnding('cut');
   }else{
@@ -7581,8 +7679,7 @@ function updVilUnrest(d){
       const nx=px2+dx,ny=py2+dy;
       if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny][nx]===TT.RIVER){
         P._riverSeen=true;
-        ft2(P.x,P.y-1.5,'🏗️ Un architecte est arrivé au village!','#b58863');
-        spawnArchitect();
+        ft2(P.x,P.y-1.5,'🦫 Un castor bâtisseur vit près des rivières...','#b58863');
         return;
       }
     }
@@ -7863,18 +7960,19 @@ function advanceEnding(){
   }
 }
 
-function updateEnding(){
+function updateEnding(d){
   if(!endingActive)return;
+  d=d||1/60;
   const type=P._ending;
   const scenes=ENDINGS[type].scenes;
   if(endPhase>=scenes.length)return;
   const scene=scenes[endPhase];
-  endTypeTimer+=1/60;
+  endTypeTimer+=d;
   if(endCharIdx<scene.text.length && endTypeTimer>0.04){
     endTypeTimer=0;endCharIdx++;
     document.getElementById('end-text').textContent=scene.text.substring(0,endCharIdx);
   }
-  endTimer+=1/60;
+  endTimer+=d;
   if(endTimer>scene.dur && endCharIdx>=scene.text.length){
     endPhase++;endTimer=0;endCharIdx=0;endTypeTimer=0;
     if(endPhase>=scenes.length){
@@ -7975,7 +8073,7 @@ function loop(ts){
   if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);shake=Math.max(0,shake-d*4)}
   // Auto-save every 60 seconds
   _saveTimer+=d;if(_saveTimer>60&&!dead&&!endingActive){_saveTimer=0;saveGame()}
-  if(endingActive)updateEnding();
+  if(endingActive)updateEnding(d);
   if(editorOpen&&Math.floor(gt*2)%2===0)updateEdStats();
   // Session log: snapshot every 30s
   if(gt-SESSION._lastSnapshotT>=30&&!dead){SESSION._lastSnapshotT=gt;sessionSnapshot()}
@@ -8006,7 +8104,7 @@ function loop(ts){
   wildlife.forEach(w=>dl.push({tp:'w',w,x:w.x,y:w.y,sy:w.y}));
   dl.sort((a,b)=>a.sy-b.sy);
   dl.forEach(item=>{if(item.tp==='t')dObj(item.x,item.y);else if(item.tp==='p')dPlayer();else if(item.tp==='wlf')dWolves_single(item.w);else if(item.tp==='w')dWildlife_single(item.w)});
-  dFigurants();dEnts();dSacredMiniBosses();dParts2();dInteractPrompts();
+  dFigurants();dEnts();dSacredMiniBosses();dChopProgress();dParts2();dInteractPrompts();
   X.restore();
 
   dLighting();dFX();dUI();
