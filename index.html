@@ -5688,7 +5688,7 @@ function updP2(d){
         }
       }
       // Check for buried caches & secret clearing stones
-      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
         const nx2=px2+dx,ny2=py2+dy;
         if(nx2<0||ny2<0||nx2>=MW||ny2>=MH)continue;
         const t=map[ny2][nx2];
