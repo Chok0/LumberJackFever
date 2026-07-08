@@ -43,6 +43,15 @@ La carte elle-même change en fonction des coupes. Pas un compteur abstrait.
 
 La corruption est aussi une **ressource exploitable** : les essences spirituelles dropent en zone corrompue. Deux façons émergentes de jouer (farming vs purification).
 
+### Siège du village *(implémenté)*
+
+Une forêt dense borde désormais le village de tous côtés — pratique pour débuter, mais chaque souche y nourrit la corruption au seuil des maisons. Si elle s'installe à moins de 30 tuiles, des créatures **marchent sur le village** :
+
+- **Alerte** (bannière) quand la corruption approche, puis vagues de raiders
+- **Siège** : les villageois se cachent, toutes les portes se verrouillent 🔒 — *sauf la maison de grand-mère* — tant que la zone n'est pas nettoyée
+- **Nettoyage** : éliminer toutes les créatures près du village → gratitude (or), la vie reprend
+- **Le choix moral est mécanique** : monter des barricades (F au village — improvisées 12 bois sans les plans du Castor, 8 avec) traite le *symptôme* (axe Maîtrise) ; purifier la terre (R) traite la *cause* (axe Restauration)
+
 ## Ressources
 
 | Ressource | Obtention | Utilisation |
@@ -123,8 +132,10 @@ La forêt doit toujours tirer le joueur un écran plus loin.
 
 - **Camps du grand-père** (3, étagés en profondeur) — arc narratif en 3 chapitres (la Compagnie Von Brandt, la mousse noire, la hache brisée) + récompenses uniques. Raccord avec la quête de la Hache Légendaire
 - **Ruines anciennes** (4) — lore des ancêtres (ils ont coupé, puis fui), fouille unique
+- **Caches enfouies** (8, réparties en profondeur + biomes latéraux) — E pour déterrer : or, essences, sève ou torches ; plus c'est profond, plus c'est riche
+- **Clairières secrètes** (3) — un cercle d'arbres avec un unique passage caché. Atteindre la pierre-fleur *sans couper le cercle* = bénédiction des esprits (essences, soin, Restauration) ; se tailler un chemin = les esprits se retirent. Zéro morale explicite : la mécanique est le message
+- **Accroches en bord d'écran** — chevrons pulsants pointant vers les POI proches non découverts : la forêt tire toujours le joueur un écran plus loin
 - **Rythme** — la santé de grand-mère décline par cycle jour/nuit, pas en temps réel : explorer lentement n'est pas puni
-- *À venir : caches, clairières secrètes accessibles uniquement sans couper, accroches visuelles en bord d'écran*
 
 ## Prototype actuel
 
@@ -153,5 +164,6 @@ README.md                       — Ce fichier
 
 ---
 
-*Game Design Document v0.6 — Juillet 2026 — Adrien (solo dev)*
+*Game Design Document v0.7 — Juillet 2026 — Adrien (solo dev)*
+*(v0.7 : rythme dynamisé — hit-stop, chute d'arbres animée, bannières d'événements ; siège du village — portes fermées, barricades vs purification ; micro-flore par biome ; inventaire à stacks ; caches, clairières secrètes, accroches bord d'écran)*
 *(v0.6 : réseaux de transport moraux, rework nuit/feu de camp, POI d'exploration, capacités de hache, dialogues moraux, totems)*
