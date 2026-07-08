@@ -73,7 +73,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 <canvas id="mm" width="128" height="112"></canvas>
 <div id="time-ind"></div>
 <div id="ui"><div class="pn" id="st"></div><div class="pn" id="inv"></div></div>
-<div id="hlp">ZQSD/flèches · ESPACE: couper/dialogue · C: dash · E: interagir · I: inventaire · R: rituel · P: planter · M: musique · TAB: éditeur · L: log</div>
+<div id="hlp">ZQSD/flèches · ESPACE: couper/dialogue · C: dash · E: interagir · F: feu de camp · I: inventaire · R: rituel · P: planter · M: musique · TAB: éditeur</div>
 <div id="shp"><div id="dlg"><div id="dlg-box"><canvas id="dlg-portrait" width="80" height="80"></canvas><div id="dlg-right"><div id="dlg-name"></div><div id="dlg-text"></div></div></div><button id="dlg-next" onclick="advanceDialogue()">...</button></div><h2>🏠 Village</h2><div id="si2"></div><p style="margin-top:6px;font-size:8px;color:#52b788;text-align:center">E / Échap: fermer</p></div>
 <div id="dth"><h2>💀 Tombé</h2><p style="color:#aaa;font-size:11px">Inventaire perdu.</p><button class="sb" style="margin-top:8px" onclick="respawn()">Continuer</button><button class="sb" style="margin-top:4px;background:#3a1010;border-color:#8b0000" onclick="newGame()">Nouvelle partie</button></div>
 <div id="title-screen" style="position:absolute;top:0;left:0;width:100%;height:100%;background:linear-gradient(180deg,#060a0e 0%,#0a1a10 50%,#060a0e 100%);z-index:150;display:flex;flex-direction:column;justify-content:center;align-items:center">
@@ -596,6 +596,10 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   HERM_T:112,      // Ermite Triste
   TRUCK:115,       // Front de taille / navette de l'Entreprise (fast travel + on-site wood sale)
   TOTEM:116,       // Totem de protection (Chamane) — repels corruption, calms villagers
+  CAMP:117,        // Feu de camp (4 bois) — lumière, repousse les loups, dormir sur place
+  GCAMP:118,       // Camp du grand-père — lore arc + one-time reward
+  RUIN:119,        // Ruine ancienne — lore + loot once
+  LUNE:120,        // Fleur lunaire — night-only collectible (+1 essence spirituelle)
 };
 // Essence data lookup
 const ESS={
@@ -750,7 +754,7 @@ function invUsed(){return P.w*RES_WEIGHT.wood+P.sap*RES_WEIGHT.sap+(P.seeds||0)*
 function invFree(){return P.invCap-invUsed()}
 let cam={x:0,y:0},smCam={x:0,y:0};
 const K={};
-document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM','KeyL'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()};if(e.code==='KeyL'&&!e.repeat){if(_sessionLogOpen)hideSessionLog();else showSessionLog()}});
+document.addEventListener('keydown',e=>{K[e.code]=true;['Space','KeyC','KeyE','KeyI','KeyP','KeyR','KeyM','KeyL','KeyF'].includes(e.code)&&e.preventDefault();if(e.code==='KeyM'&&!e.repeat){const on=toggleMusic();ft2&&P&&ft2(P.x,P.y,on?'🎵 Musique ON':'🔇 Musique OFF','#e9c46a')};if(e.code==='Tab'){e.preventDefault();editorOpen=!editorOpen;document.getElementById('editor').style.display=editorOpen?'block':'none';if(editorOpen&&!document.getElementById('ed-content').innerHTML)buildEditor()};if(e.code==='KeyL'&&!e.repeat){if(_sessionLogOpen)hideSessionLog();else showSessionLog()}});
 document.addEventListener('keyup',e=>{K[e.code]=false});
 
 // ============ AUDIO SYSTEM (8-bit chiptune) ============
@@ -932,13 +936,13 @@ const SPRITE_CAT={noi:'s',aul:'s',bou:'s',era:'m',pin:'m',fre:'m',che:'l',het:'l
 // dayPhase: 0=midnight, ~0.5=noon — SUMMER: long days, short nights
 function getDayState(){
   const p=dayPhase;
-  if(p<0.08){// deep night - very dark
+  if(p<0.08){// deep night — moonlit blue: silhouettes readable, details hidden (light sources reveal color/detail/safety)
     const t=p/0.08;
     const pulse=Math.sin(t*Math.PI)*.02;
-    return{sun:0,r:Math.floor(2+pulse*5),g:Math.floor(1+pulse*3),b:Math.floor(5+pulse*8),tint:'#020108',name:'🌙 Nuit',fog:.3,nightMul:.97};
+    return{sun:0,r:Math.floor(30+pulse*6),g:Math.floor(36+pulse*5),b:Math.floor(64+pulse*10),tint:'#0c1224',name:'🌙 Nuit',fog:.15,nightMul:.97};
   }else if(p<0.14){// pre-dawn
     const t=(p-0.08)/0.06;
-    return{sun:t*.05,r:Math.floor(2+t*20),g:Math.floor(1+t*12),b:Math.floor(5+t*30),tint:lerpC('#020108','#1a0830',t),name:'🌙 Aube naissante',fog:.2*(1-t*.5),nightMul:.97-.47*t};
+    return{sun:t*.05,r:Math.floor(30-t*8),g:Math.floor(36-t*23),b:Math.floor(64-t*29),tint:lerpC('#0c1224','#1a0830',t),name:'🌙 Aube naissante',fog:.12*(1-t*.5),nightMul:.97-.47*t};
   }else if(p<0.20){// dawn
     const t=(p-0.14)/0.06;
     const t2=t*t*(3-2*t);
@@ -956,10 +960,10 @@ function getDayState(){
     const t=(p-0.75)/0.13;
     const t2=t*t*(3-2*t);
     return{sun:.55-.55*t2,r:Math.floor(175-t2*148),g:Math.floor(145-t2*128),b:Math.floor(140-t2*105),tint:lerpC('#e8a850','#200820',t2),name:'🌆 Crépuscule',fog:.03*t2,nightMul:t2*.7};
-  }else{// nightfall - quick, gets very dark
+  }else{// nightfall — settles into readable moonlight, not blackness
     const t=(p-0.88)/0.12;
     const t2=t*t;
-    return{sun:0,r:Math.floor(27-t2*25),g:Math.floor(17-t2*16),b:Math.floor(35-t2*30),tint:lerpC('#200820','#020108',t2),name:'🌙 Nuit tombante',fog:.06+t2*.24,nightMul:.7+t2*.27};
+    return{sun:0,r:Math.floor(27+t2*3),g:Math.floor(17+t2*19),b:Math.floor(35+t2*29),tint:lerpC('#200820','#0c1224',t2),name:'🌙 Nuit tombante',fog:.06+t2*.09,nightMul:.7+t2*.27};
   }
 }
 
@@ -2505,6 +2509,27 @@ const NPC_DATA = {
     title: '🚚 Navette',
     borderCol: '#e8b830',
     visited: false,
+  },
+  [TT.CAMP]: {
+    name: 'Feu de camp',
+    title: '🔥 Feu de camp',
+    borderCol: '#ffa500',
+    visited: false,
+    noDialogue: true,
+  },
+  [TT.GCAMP]: {
+    name: 'Camp du grand-père',
+    title: '⛺ Vieux camp',
+    borderCol: '#c9a86c',
+    visited: false,
+    noDialogue: true,
+  },
+  [TT.RUIN]: {
+    name: 'Ruine ancienne',
+    title: '🏛️ Ruine',
+    borderCol: '#9a9aa0',
+    visited: false,
+    noDialogue: true,
   },
 };
 
@@ -4355,7 +4380,7 @@ function genMap(){
   window._primPos = {x:primX, y:primY};
 }
 function isT(t){return !!ESS[t]}
-function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT||t===TT.CASTOR||t===TT.TRUCK}
+function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT||t===TT.CASTOR||t===TT.TRUCK||t===TT.CAMP||t===TT.GCAMP||t===TT.RUIN}
 function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART||t===TT.TOTEM}
 function isS(t){return isT(t)||t===TT.WA||t===TT.RK||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
 function isPlayerBlocked(t){return isS(t)&&t!==TT.BARR}
@@ -4551,6 +4576,103 @@ function getMaitrise(){return Math.min(1,(P._axeMaitrise||0)/40)}
 function inVillageZone(tx,ty){
   const VIL_Y=MH-12;
   return ty>=VIL_Y-10 && Math.abs(tx-128)<=20;
+}
+
+// ============ POINTS D'INTÉRÊT (exploration) ============
+// Grandfather's camps (3-chapter story arc, one per depth) + ancient ruins (ancestors' lore + loot).
+// The forest should always have something pulling you one screen further.
+function placePOIs(){
+  if(P._gcampsPos&&P._gcampsPos.length)return;
+  P._gcampsPos=[];
+  const depths=[{y:150,x0:96,x1:160},{y:88,x0:96,x1:160},{y:44,x0:100,x1:156}];
+  depths.forEach(dp=>{
+    let placed=false;
+    for(let attempt=0;attempt<200&&!placed;attempt++){
+      const x=dp.x0+Math.floor(Math.random()*(dp.x1-dp.x0));
+      const y=dp.y-4+Math.floor(Math.random()*9);
+      if(y<3||y>=MH-16)continue;
+      if(map[y][x]!==TT.G)continue;
+      map[y][x]=TT.GCAMP;P._gcampsPos.push({x,y});placed=true;
+    }
+    if(!placed){const x=Math.floor((dp.x0+dp.x1)/2),y=dp.y;map[y][x]=TT.GCAMP;P._gcampsPos.push({x,y})}
+  });
+  P._ruinsPos=[];
+  const ruinZones=[{y0:110,y1:165},{y0:60,y1:100},{y0:25,y1:55},{y0:120,y1:180}];
+  ruinZones.forEach(z=>{
+    for(let attempt=0;attempt<200;attempt++){
+      const x=20+Math.floor(Math.random()*(MW-40));
+      const y=z.y0+Math.floor(Math.random()*(z.y1-z.y0));
+      if(map[y]?.[x]!==TT.G)continue;
+      map[y][x]=TT.RUIN;P._ruinsPos.push({x,y});break;
+    }
+  });
+}
+// Re-stamp POI tiles after loading a save that predates them
+function restampPOIs(){
+  (P._gcampsPos||[]).forEach(c=>{if(map[c.y]&&map[c.y][c.x]===TT.G)map[c.y][c.x]=TT.GCAMP});
+  (P._ruinsPos||[]).forEach(c=>{if(map[c.y]&&map[c.y][c.x]===TT.G)map[c.y][c.x]=TT.RUIN});
+}
+
+// ============ FEU DE CAMP & NUIT QUI PAIE ============
+// Nightfall asks a question: camp here (costs wood), push on in the moonlight, or head home?
+// The campfire is light + wolf repellent + field sleep. It burns out at sunrise.
+function placeCampfire(){
+  if(P.w<4){ft2(P.x,P.y,'Il faut 4 bûches pour un feu de camp','#e74c3c');return}
+  const fi=Math.max(0,Math.min(3,P.f||0));
+  const tx=Math.floor(P.x+[0,1,0,-1][fi]),ty=Math.floor(P.y+[-1,0,1,0][fi]);
+  if(tx<1||ty<1||tx>=MW-1||ty>=MH-1){ft2(P.x,P.y,'Pas ici','#aaa');return}
+  const t=map[ty][tx];
+  if(t!==TT.G&&t!==TT.ST&&t!==TT.FL&&t!==TT.BU){ft2(P.x,P.y,'Il faut un sol dégagé devant toi','#e9c46a');return}
+  if(P.y>MH-14){ft2(P.x,P.y,'Pas de feu dans le village !','#e9c46a');return}
+  P.w-=4;P.wv=Math.max(0,(P.wv||0)-4);
+  let left=4;for(const k in P.woodByType){const take=Math.min(left,P.woodByType[k]);P.woodByType[k]-=take;left-=take;if(left<=0)break}
+  map[ty][tx]=TT.CAMP;
+  if(!P._camps)P._camps=[];
+  P._camps.push({x:tx,y:ty});
+  ft2(tx+.5,ty-1,'🔥 Feu de camp allumé','#ffa500');
+  ft2(tx+.5,ty-2,'Les bêtes craignent le feu. Il tiendra jusqu\'à l\'aube.','#e9c46a');
+  sp(tx+.5,ty+.5,'#ff8830',12);sfxChop();
+  addMaitrise(1);
+  logEvent('CAMP','Feu de camp allumé',{x:tx,y:ty});
+}
+function nearCamp(x,y,r){
+  const cs=P._camps;if(!cs||!cs.length)return false;
+  for(let i=0;i<cs.length;i++){const dx=x-cs[i].x,dy=y-cs[i].y;if(dx*dx+dy*dy<=r*r)return true}
+  return false;
+}
+// Lunar flowers: night-only pickups worth a spiritual essence — the night as opportunity, not tax
+let _lunes=[],_luneSpawnedTonight=false,_nightCycleT=0;
+function updNightCycle(d){
+  _nightCycleT+=d;if(_nightCycleT<1)return;_nightCycleT=0;
+  const ds=getDayState(),nm=ds.nightMul||0;
+  if(nm>0.5&&!_luneSpawnedTonight){
+    // Night falls: lunar flowers bloom around the player's region
+    _luneSpawnedTonight=true;
+    let placed=0;
+    for(let attempt=0;attempt<40&&placed<8;attempt++){
+      const a=Math.random()*Math.PI*2,r=8+Math.random()*18;
+      const x=Math.floor(P.x+Math.cos(a)*r),y=Math.floor(P.y+Math.sin(a)*r);
+      if(x<2||y<2||x>=MW-2||y>=MH-16)continue;
+      if(map[y][x]!==TT.G)continue;
+      map[y][x]=TT.LUNE;_lunes.push({x,y});placed++;
+    }
+    if(placed>0)ft2(P.x,P.y-1.5,'🌙 Des fleurs lunaires s\'ouvrent dans la nuit...','#9ad1ff');
+  }
+  if(ds.sun>0.4){
+    // Morning: campfires burn out, lunar flowers close
+    if(P._camps&&P._camps.length){
+      for(const c of P._camps){if(map[c.y]?.[c.x]===TT.CAMP){map[c.y][c.x]=TT.G;sp(c.x+.5,c.y+.5,'#888',5)}}
+      if(nearCamp(P.x,P.y,14))ft2(P.x,P.y-1,'🔥 Le feu s\'éteint doucement au matin.','#aaa');
+      P._camps=[];
+    }
+    if(_luneSpawnedTonight||_lunes.length){
+      for(const l of _lunes){if(map[l.y]?.[l.x]===TT.LUNE)map[l.y][l.x]=TT.G}
+      _lunes=[];
+      // Sweep for any leftovers (e.g. restored from a mid-night save)
+      for(let y=0;y<MH;y++)for(let x=0;x<MW;x++)if(map[y][x]===TT.LUNE)map[y][x]=TT.G;
+      _luneSpawnedTonight=false;
+    }
+  }
 }
 
 // ============ ÉVÉNEMENTS « OUVRIERS ATTAQUÉS » ============
@@ -5185,6 +5307,16 @@ function updWolves(d){
     const dx=P.x-w.x,dy=P.y-w.y,di=Math.sqrt(dx*dx+dy*dy);
     // Despawn if very far
     if(di>40){wolves.splice(i,1);continue}
+    // Wolves fear fire: flee from campfires
+    if(P._camps&&P._camps.length){
+      let fc=null,fd=99;
+      for(const c of P._camps){const cdx=w.x-c.x,cdy=w.y-c.y,cd=Math.sqrt(cdx*cdx+cdy*cdy);if(cd<fd){fd=cd;fc=c}}
+      if(fc&&fd<6){
+        const fx=(w.x-fc.x)/Math.max(.1,fd),fy=(w.y-fc.y)/Math.max(.1,fd);
+        w.x+=fx*w.spd*1.5*d;w.y+=fy*w.spd*1.5*d;
+        continue; // fire overrides hunting
+      }
+    }
     // Pack cohesion: find pack center
     const pack=wolves.filter(o=>o.packId===w.packId);
     let pcx=0,pcy=0;pack.forEach(p=>{pcx+=p.x;pcy+=p.y});
@@ -5281,6 +5413,10 @@ function updP2(d){
   // R key = perform purification ritual (on corrupted stumps or near sacred trees)
   if(K.KeyR){K.KeyR=false;
     try{performRitual()}catch(err){console.error('Ritual error:',err)}
+  }
+  // F key = build a campfire (4 wood) on the tile you're facing
+  if(K.KeyF){K.KeyF=false;
+    if(!shopOn&&!dead)try{placeCampfire()}catch(err){console.error('Campfire error:',err)}
   }
   // P key = plant seed / Arbre-Chant
   if(K.KeyP){K.KeyP=false;
@@ -5456,6 +5592,7 @@ function updP2(d){
   const ptile=map[pty]?.[ptx];
   if(ptile===TT.HERB){map[pty][ptx]=TT.G;P.herbs++;ft2(P.x,P.y,'🌿+1 Herbe','#52b788');sp(P.x,P.y,'#52b788',6);sfxPickup();}
   if(ptile===TT.MUSH){map[pty][ptx]=TT.G;P.mushrooms++;ft2(P.x,P.y,'🍄+1 Champignon','#b088d0');sp(P.x,P.y,'#9060b0',6);sfxPickup();}
+  if(ptile===TT.LUNE){map[pty][ptx]=TT.G;P.essences=(P.essences||0)+1;_lunes=_lunes.filter(l=>l.x!==ptx||l.y!==pty);ft2(P.x,P.y,'🌙+1 Essence lunaire','#9ad1ff');sp(P.x,P.y,'#9ad1ff',8);sfxLore();addRestauration(1);}
   const staRegen=(TUNING.staRegen+(P._staRegenBonus||0))*(P._encens&&gt<P._encens?2:1)*(1-(P._corrStaDebuff||0));
   P.sta=Math.min(P.msta,P.sta+staRegen*d);P.ct=Math.max(0,P.ct-d);P.iv=Math.max(0,P.iv-d);P.ht=Math.max(0,P.ht-d);P.sw=Math.max(0,P.sw-d*10);
   P._counterWindow=Math.max(0,(P._counterWindow||0)-d);
@@ -5825,6 +5962,9 @@ function shopTitle(t){
   if(t===TT.BROKEN_AXE)return'⚔️ Hache Brisée';
   if(t===TT.DOCTOR)return'💊 Dr. Engström';
   if(t===TT.TRUCK)return'🚚 Navette de l\'Entreprise';
+  if(t===TT.CAMP)return'🔥 Feu de camp';
+  if(t===TT.GCAMP)return'⛺ Camp du grand-père';
+  if(t===TT.RUIN)return'🏛️ Ruine ancienne';
   if(t===TT.ARCHITECT)return'🏗️ Sven — Architecte';
   if(t===TT.CASTOR)return'🦫 Castor Bâtisseur';
   return'🏠 Village';
@@ -6078,6 +6218,97 @@ function updShop(){
       items.push({n:'   "Je suis désolé... Il n\'y a plus rien que je puisse faire."',c:9999,a:()=>{}});
     }
     items.push({n:'💊 Soins personnels (restore HP)',c:8,a:()=>{P.hp=P.mhp;ft2(P.x,P.y,'❤️ Soigné!','#52b788')}});
+  }else if(t===TT.CAMP){
+    // Campfire: rest in the field
+    const ds2=getDayState();
+    const isNight2=(ds2.nightMul||0)>0.3;
+    items=[];
+    items.push({n:'🔥 Le feu crépite. Les ombres reculent.',c:9999,a:()=>{}});
+    items.push({n:`🛏️ Dormir jusqu'à l'aube ${isNight2?'':'(attends la nuit)'}`,c:isNight2?0:9999,lb:isNight2?'Dormir':'—',a:()=>{
+      gmTick((0.20-dayPhase+1)%1);
+      dayPhase=0.20;
+      P.sta=P.msta;P.hp=Math.min(P.mhp,P.hp+2);
+      shopOn=false;curShop='';document.getElementById('shp').style.display='none';
+      ft2(P.x,P.y,'☀️ Un matin frais en forêt.','#ffd700');
+      ft2(P.x,P.y-1,'(+2 PV — un vrai lit ferait mieux)','#aaa');
+      logEvent('CAMP','Nuit passée au feu de camp');
+    }});
+    items.push({n:'   Les loups n\'approcheront pas des flammes.',c:9999,a:()=>{}});
+  }else if(t===TT.GCAMP){
+    // Grandfather's camps — a 3-chapter environmental story arc + one-time rewards
+    items=[];
+    const gi=(P._gcampsPos||[]).findIndex(c=>Math.abs(c.x-Math.floor(P.x))<=2&&Math.abs(c.y-Math.floor(P.y))<=2);
+    const chapters=[
+      [ // Camp 1 — lisière profonde
+        '📖 Un carnet moisi, l\'écriture de grand-père :',
+        '« Compagnie Von Brandt, 3e équipe. On coupe 200 troncs par semaine. »',
+        '« Le contremaître dit que la forêt est infinie. Je commence à en douter. »',
+        '« J\'ai vu un cerf blanc aujourd\'hui. Il m\'a regardé longtemps. »',
+      ],
+      [ // Camp 2 — forêt ancienne
+        '📖 Des pages arrachées, cachées sous une pierre :',
+        '« La mousse noire suit nos coupes. Personne ne veut le voir. »',
+        '« Jansson a disparu cette nuit. On a retrouvé sa hache, plantée droite. »',
+        '« J\'ai arrêté de couper. Je marque les arbres qui parlent. Ils me laissent passer. »',
+      ],
+      [ // Camp 3 — orée primordiale
+        '📖 Une dernière page, l\'encre presque effacée :',
+        '« La Compagnie est partie. La forêt a repris les camps en une saison. »',
+        '« J\'ai porté ma hache jusqu\'au Cœur. Je ne l\'ai pas déposée. Je n\'ai pas osé. »',
+        '« Je l\'ai brisée contre une souche, près d\'une cabane, et j\'ai juré. Pardonne-moi. »',
+      ],
+    ];
+    const rewards=[
+      {n:'🎁 Fouiller le camp (torches + or)',do:()=>{P._torches=(P._torches||0)+3;P.g+=15;SESSION.totalGoldEarned+=15;ft2(P.x,P.y,'🔥+3 torches · 💰+15','#c9a86c')}},
+      {n:'🎁 Fouiller le camp (pierre à affûter)',do:()=>{P._axeMaxDur=(P._axeMaxDur||50)+20;P._axeDur=Math.min(P._axeMaxDur,P._axeDur+20);ft2(P.x,P.y,'🔧 Durabilité max +20','#e9c46a')}},
+      {n:'🎁 Fouiller le camp (gourde de grand-père)',do:()=>{P.msta+=20;P.sta=P.msta;P._staminaBonus=(P._staminaBonus||0)+20;ft2(P.x,P.y,'⚡ Stamina max +20','#52b788');ft2(P.x,P.y-1,'Une cabane abandonnée... au nord-est ?','#daa520')}},
+    ];
+    const ch=chapters[Math.max(0,Math.min(2,gi))];
+    ch.forEach(l=>items.push({n:l,c:9999,a:()=>{}}));
+    if(!P._gcampLooted)P._gcampLooted=[];
+    if(gi>=0&&!P._gcampLooted[gi]){
+      items.push({n:rewards[Math.min(2,gi)].n,c:0,lb:'Fouiller',a:()=>{
+        P._gcampLooted[gi]=true;
+        rewards[Math.min(2,gi)].do();
+        addComprehension(3);sfxLore();sp(P.x,P.y,'#c9a86c',10);
+        logEvent('GCAMP',`Camp du grand-père #${gi+1} fouillé`);
+        updShop();
+      }});
+    }else if(gi>=0){
+      items.push({n:'   (Tu as déjà tout emporté. Le silence reste.)',c:9999,a:()=>{}});
+    }
+  }else if(t===TT.RUIN){
+    // Ancient ruins — the ancestors did the same, and lost
+    items=[];
+    const rk=Math.floor(P.x)+','+Math.floor(P.y);
+    if(!P._ruinsLooted)P._ruinsLooted={};
+    // Find the actual ruin tile nearby for a stable key
+    let ruinKey=rk;
+    for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
+      const nx=Math.floor(P.x)+dx,ny=Math.floor(P.y)+dy;
+      if(nx>=0&&ny>=0&&nx<MW&&ny<MH&&map[ny][nx]===TT.RUIN)ruinKey=nx+','+ny;
+    }
+    const ruinLore=[
+      '🏛️ Des pierres taillées bien avant le village.',
+      '   Des gravures : des silhouettes qui coupent des arbres...',
+      '   ...puis des silhouettes qui fuient quelque chose de grand.',
+      '   La dernière pierre est brisée net. Volontairement.',
+    ];
+    ruinLore.forEach(l=>items.push({n:l,c:9999,a:()=>{}}));
+    if(!P._ruinsLooted[ruinKey]){
+      items.push({n:'🎁 Fouiller les décombres',c:0,lb:'Fouiller',a:()=>{
+        P._ruinsLooted[ruinKey]=true;
+        const roll=Math.random();
+        if(roll<.4){const g=10+Math.floor(Math.random()*16);P.g+=g;SESSION.totalGoldEarned+=g;ft2(P.x,P.y,`💰+${g} (pièces anciennes)`,'#ffd700')}
+        else if(roll<.7){P.essences=(P.essences||0)+2;ft2(P.x,P.y,'✨+2 Essences spirituelles','#b266ff')}
+        else{P.sap+=2;ft2(P.x,P.y,'💧+2 Sève cristallisée','#b088d0')}
+        addComprehension(2);sfxLore();sp(P.x,P.y,'#9a9aa0',8);
+        logEvent('RUIN','Ruine fouillée',{key:ruinKey});
+        updShop();
+      }});
+    }else{
+      items.push({n:'   (Déjà fouillée. Les pierres se taisent.)',c:9999,a:()=>{}});
+    }
   }else if(t===TT.TRUCK){
     // Company shuttle: fast travel between village depot and fronts de taille + on-site wood sale
     items=[];
@@ -6650,6 +6881,64 @@ function dObj(wx,wy){
   else if(tile===TT.CARTO){X.fillStyle='#3a6b9f';X.fillRect(px2+8*SC,py2-8*SC,48*SC,48*SC);X.fillStyle='#2a5a8a';X.fillRect(px2+12*SC,py2-4*SC,40*SC,40*SC);X.fillStyle='#f5e6c8';X.fillRect(px2+20*SC,py2+4*SC,24*SC,24*SC);X.fillStyle='#4a90d9';X.fillRect(px2+48*SC,py2-14*SC,12*SC,8*SC);X.fillStyle='#5a3a1a';X.fillRect(px2+46*SC,py2-18*SC,4*SC,22*SC)}
   else if(tile===TT.ANTHRO){X.fillStyle='#8b6914';X.fillRect(px2+6*SC,py2-6*SC,52*SC,46*SC);X.fillStyle='#a0782a';X.fillRect(px2+10*SC,py2-2*SC,44*SC,38*SC);X.fillStyle='#f0e6d0';X.fillRect(px2+16*SC,py2+6*SC,12*SC,20*SC);X.fillStyle='#daa520';X.fillRect(px2+36*SC,py2+8*SC,8*SC,16*SC)}
   else if(tile===TT.HERM){X.fillStyle='#3a4a2a';X.fillRect(px2+4*SC,py2-12*SC,56*SC,52*SC);X.fillStyle='#4a5a3a';X.fillRect(px2+8*SC,py2-8*SC,48*SC,44*SC);X.fillStyle='#2a3a1a';X.fillRect(px2+2*SC,py2-16*SC,60*SC,8*SC);X.fillStyle='#1a2a0a';X.fillRect(px2+24*SC,py2+4*SC,16*SC,28*SC);X.fillStyle='#52b788';X.fillRect(px2+6*SC,py2-10*SC,4*SC,20*SC)}
+  else if(tile===TT.CAMP){
+    // Campfire — log ring + animated flame
+    X.fillStyle='rgba(8,20,12,.3)';X.beginPath();X.ellipse(px2+16*SC,py2+24*SC,12*SC,4*SC,0,0,Math.PI*2);X.fill();
+    // Stone ring
+    X.fillStyle='#5a5a60';
+    for(let i=0;i<7;i++){const a=i/7*Math.PI*2;X.fillRect(px2+(15+Math.cos(a)*9)*SC,py2+(18+Math.sin(a)*4)*SC,3*SC,3*SC)}
+    // Logs
+    X.fillStyle='#5a3a1a';X.fillRect(px2+9*SC,py2+16*SC,14*SC,3*SC);X.fillRect(px2+13*SC,py2+13*SC,3*SC,8*SC);
+    // Flame (3 layers, animated)
+    const ff=Math.sin(gt*11)*2,ff2=Math.sin(gt*17+1)*1.5;
+    X.fillStyle='#ff6a00';X.beginPath();X.ellipse(px2+16*SC,py2+(10+ff)*SC,5*SC,(8-ff2)*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#ffaa20';X.beginPath();X.ellipse(px2+16*SC,py2+(11+ff2)*SC,3.5*SC,(6+ff)*SC*.7,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#ffe080';X.beginPath();X.ellipse(px2+16*SC,py2+(13+ff)*SC,2*SC,3*SC,0,0,Math.PI*2);X.fill();
+    // Sparks
+    if(Math.random()<.15)amb.push({x:wx+.5,y:wy+.3,vx:(Math.random()-.5)*.4,vy:-.5-Math.random()*.4,l:.8,ml:1,c:Math.random()>.5?'#ffaa20':'#ff6a00',s:1,rot:0});
+  }
+  else if(tile===TT.LUNE){
+    // Lunar flower — pale glowing bloom
+    const pl=.6+Math.sin(gt*3+wx*2)*.3;
+    X.fillStyle='#3a5a3a';X.fillRect(px2+15*SC,py2+18*SC,2*SC,8*SC);
+    X.fillStyle=`rgba(150,210,255,${pl})`;
+    X.fillRect(px2+12*SC,py2+14*SC,8*SC,3*SC);X.fillRect(px2+14*SC,py2+11*SC,4*SC,9*SC);
+    X.fillStyle=`rgba(230,245,255,${pl})`;X.fillRect(px2+15*SC,py2+15*SC,2*SC,2*SC);
+  }
+  else if(tile===TT.GCAMP){
+    // Grandfather's old camp — collapsed tent, cold firepit, memories
+    X.fillStyle='rgba(8,20,12,.3)';X.beginPath();X.ellipse(px2+16*SC,py2+26*SC,16*SC,5*SC,0,0,Math.PI*2);X.fill();
+    // Weathered lean-to
+    X.fillStyle='#4a3a26';X.beginPath();X.moveTo(px2+2*SC,py2+24*SC);X.lineTo(px2+14*SC,py2+2*SC);X.lineTo(px2+26*SC,py2+24*SC);X.closePath();X.fill();
+    X.fillStyle='#5c4a30';X.beginPath();X.moveTo(px2+6*SC,py2+24*SC);X.lineTo(px2+14*SC,py2+8*SC);X.lineTo(px2+22*SC,py2+24*SC);X.closePath();X.fill();
+    // Moss on the canvas
+    X.fillStyle='#40916c';X.fillRect(px2+10*SC,py2+6*SC,4*SC,2*SC);X.fillRect(px2+16*SC,py2+14*SC,5*SC,2*SC);
+    // Cold firepit
+    X.fillStyle='#3a3a3e';for(let i=0;i<5;i++){const a=i/5*Math.PI*2;X.fillRect(px2+(28+Math.cos(a)*4)*SC,py2+(22+Math.sin(a)*2)*SC,2*SC,2*SC)}
+    X.fillStyle='#222';X.fillRect(px2+27*SC,py2+21*SC,3*SC,2*SC);
+    // Old axe planted in a log
+    X.fillStyle='#5a3a1a';X.fillRect(px2+24*SC,py2+10*SC,8*SC,4*SC);
+    X.fillStyle='#8a8a90';X.fillRect(px2+26*SC,py2+4*SC,4*SC,3*SC);X.fillStyle='#6a4a2a';X.fillRect(px2+27*SC,py2+6*SC,2*SC,6*SC);
+    // Faint memory shimmer
+    if(Math.random()<.04)amb.push({x:wx+.5,y:wy+.2,vx:0,vy:-.1,l:2,ml:2.5,c:'rgba(255,230,150,0.4)',s:.8,rot:0});
+  }
+  else if(tile===TT.RUIN){
+    // Ancient ruin — broken arch with carved stones
+    X.fillStyle='rgba(8,20,12,.3)';X.beginPath();X.ellipse(px2+16*SC,py2+26*SC,15*SC,5*SC,0,0,Math.PI*2);X.fill();
+    // Broken pillars
+    X.fillStyle='#6a6a70';X.fillRect(px2+4*SC,py2-2*SC,7*SC,28*SC);
+    X.fillStyle='#7a7a80';X.fillRect(px2+5*SC,py2,5*SC,26*SC);
+    X.fillStyle='#5a5a60';X.fillRect(px2+22*SC,py2+8*SC,7*SC,18*SC);
+    X.fillStyle='#6a6a72';X.fillRect(px2+23*SC,py2+10*SC,5*SC,16*SC);
+    // Fallen arch stone
+    X.fillStyle='#63636a';X.fillRect(px2+10*SC,py2+20*SC,12*SC,5*SC);
+    // Ancient carvings (faint gold)
+    X.fillStyle='rgba(218,165,32,0.5)';X.fillRect(px2+6*SC,py2+4*SC,3*SC,2*SC);X.fillRect(px2+6*SC,py2+10*SC,3*SC,2*SC);X.fillRect(px2+24*SC,py2+13*SC,3*SC,2*SC);
+    // Moss and age
+    X.fillStyle='#2d6a4f';X.fillRect(px2+4*SC,py2+18*SC,4*SC,3*SC);X.fillRect(px2+25*SC,py2+22*SC,4*SC,2*SC);
+    // Mystery sparkle
+    if(Math.random()<.03)amb.push({x:wx+.3+Math.random()*.4,y:wy+.1,vx:0,vy:-.08,l:1.5,ml:2,c:'rgba(218,185,80,0.5)',s:.7,rot:0});
+  }
   else if(tile===TT.TRUCK){
     // Company shuttle truck — boxy van, Company yellow
     const bob=Math.sin(gt*4)*1*SC; // idling engine
@@ -7041,8 +7330,8 @@ function dLighting(){
   let g=Math.floor(ds.g*(1-depthDark*.7));
   let b=Math.floor(ds.b*(1-depthDark*.85));
 
-  // Clamp to very dark for true night feel
-  r=Math.max(2,r);g=Math.max(1,g);b=Math.max(3,b);
+  // Visibility floor — full-moon night: navigation always possible, light sources buy detail & safety
+  r=Math.max(26,r);g=Math.max(32,g);b=Math.max(56,b);
 
   LX.fillStyle=`rgb(${r},${g},${b})`;
   LX.fillRect(0,0,LCV.width,LCV.height);
@@ -7086,7 +7375,24 @@ function dLighting(){
   for(let y=-5;y<=VH+5;y++)for(let x=-4;x<=VW+4;x++){
     const wx=stX+x,wy=stY+y;
     if(wx>=0&&wy>=0&&wx<MW&&wy<MH){
-      if(map[wy][wx]===TT.TJ){
+      if(map[wy][wx]===TT.CAMP){
+        // Campfire: strong warm circle of safety
+        const lx=(wx-smCam.x)*T*SC+T*SC/2,ly=(wy-smCam.y)*T*SC+T*SC/2;
+        const flk=Math.sin(gt*9+wx)*.08+Math.sin(gt*14.3)*.04;
+        const p=.5+nightMul*.4+flk;
+        const gr=LX.createRadialGradient(lx,ly,0,lx,ly,(70+nightMul*40)*SC);
+        gr.addColorStop(0,`rgba(255,200,110,${Math.min(1,p)})`);gr.addColorStop(.4,`rgba(255,150,60,${p*.5})`);gr.addColorStop(1,'rgba(255,110,30,0)');
+        LX.fillStyle=gr;LX.fillRect(0,0,LCV.width,LCV.height);
+      }
+      if(map[wy][wx]===TT.LUNE&&nightMul>.2){
+        // Lunar flower: cold pale shimmer — visible from afar, pulls the eye
+        const lx=(wx-smCam.x)*T*SC+T*SC/2,ly=(wy-smCam.y)*T*SC+T*SC/2;
+        const p=(.18+Math.sin(gt*3+wx*2+wy)*.08)*nightMul;
+        const gr=LX.createRadialGradient(lx,ly,0,lx,ly,20*SC);
+        gr.addColorStop(0,`rgba(150,210,255,${p})`);gr.addColorStop(1,'rgba(120,180,255,0)');
+        LX.fillStyle=gr;LX.fillRect(0,0,LCV.width,LCV.height);
+      }
+      if(map[wy][wx]===TT.TJ||map[wy][wx]===TT.ARBRE_CHANT){
         const lx=(wx-smCam.x)*T*SC+T*SC/2,ly=(wy-smCam.y)*T*SC;
         const pulse=.2+Math.sin(gt*1.5)*.1+nightMul*.15;
         const gr=LX.createRadialGradient(lx,ly,0,lx,ly,(50+nightMul*15)*SC);
@@ -7311,6 +7617,10 @@ function dMM(){
     else if(t===TT.VIL_BARRICADE)c='#6a4a20';
     else if(t===TT.TOTEM)c='#74c69d';
     else if(t===TT.TRUCK)c='#e8b830';
+    else if(t===TT.CAMP)c='#ff8830';
+    else if(t===TT.GCAMP)c='#c9a86c';
+    else if(t===TT.RUIN)c='#9a9aa0';
+    else if(t===TT.LUNE)c='#9ad1ff';
     else if(isDeco(t))c='#b0a070';
     else if(t===TT.HERB)c='#52b788';
     else if(t===TT.MUSH)c='#9060b0';
@@ -8569,7 +8879,7 @@ function loop(ts){
       spawnGuardian(pp.x,pp.y);
     }
   }
-  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);updWorkerEvent(d);shake=Math.max(0,shake-d*4)}
+  if(!dead&&!shopOn){updCorr(d);updRegrow(d);updSeedGrowth(d);updE(d);spawnE();updWolves(d);updWildlife(d);updFigurants(d);updParts(d);updGuardian(d);updBossEast(d);updBossWest(d);updBossEffects(d);updSacredMiniBosses(d);checkLateralBosses();updVilUnrest(d);updWorkerEvent(d);updNightCycle(d);shake=Math.max(0,shake-d*4)}
   // Auto-save every 60 seconds
   _saveTimer+=d;if(_saveTimer>60&&!dead&&!endingActive){_saveTimer=0;saveGame()}
   if(endingActive)updateEnding(d);
@@ -8611,7 +8921,7 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 
-initSprites();genMap();initFigurants();smCam.x=P.x-VW/2;smCam.y=P.y-VH/2;
+initSprites();genMap();placePOIs();initFigurants();smCam.x=P.x-VW/2;smCam.y=P.y-VH/2;
 
 // Show continue button if save exists
 if(hasSave()){const btn=document.getElementById('btn-continue');if(btn)btn.style.display='block'}
@@ -8629,6 +8939,7 @@ function continueGame(){
   introActive=false;
   P._introSeen=true;
   loadGame();
+  restampPOIs();
   initFigurants();
 }
 
