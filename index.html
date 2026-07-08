@@ -172,8 +172,8 @@ const TUNING = {
   // -- Herbs & Mushrooms --
   herbsForPotions: 5,
   mushsForEncens: 5,
-  herbsPerClearing: 2,       // herbs spawned per clearing
-  mushsPerClearing: 1,       // mushrooms spawned per clearing
+  herbsPerClearing: 3,       // herbs spawned per clearing
+  mushsPerClearing: 2,       // mushrooms spawned per clearing
   // -- Sacred Tree Aura --
   sacredAuraRadius: 8,        // tiles of anti-corruption protection
   sacredMiniBossHp: 15,       // HP of sacred tree guardian mini-boss
@@ -4057,6 +4057,7 @@ function genMap(){
           map[y][x]=n2(x,y,seed+400)>.5?TT.CYP:TT.MAN;
         }else if(val<dens*.68) map[y][x]=TT.BU;
         else if(n2(x,y,seed+100)>.93) map[y][x]=TT.FL;
+        else if(n2(x,y,seed+160)>.985) map[y][x]=TT.MUSH;
         else map[y][x]=TT.G;
       }else{ // === CENTRAL FOREST ===
         const biome=y<B_PRIM?3:y<B_ANC?2:y<B_MIX?1:0;
@@ -4072,6 +4073,8 @@ function genMap(){
           }else if(val<dens*.62) map[y][x]=TT.BOU;
           else if(val<dens*.68) map[y][x]=TT.BU;
           else if(n2(x,y,seed+100)>.90) map[y][x]=TT.FL;
+          else if(n2(x,y,seed+160)>.988) map[y][x]=TT.MUSH;
+          else if(n2(x,y,seed+161)>.986) map[y][x]=TT.HERB;
           else if(n2(x,y,seed+150)>.975) map[y][x]=TT.RK;
           else map[y][x]=TT.G;
         }else if(biome===1){ // Forêt Mixte
@@ -4086,6 +4089,8 @@ function genMap(){
             map[y][x]=n2(x,y,seed+400)>.5?TT.PIN:TT.FRE;
           }else if(val<dens*.65) map[y][x]=TT.BU;
           else if(n2(x,y,seed+100)>.92) map[y][x]=TT.FL;
+          else if(n2(x,y,seed+160)>.987) map[y][x]=TT.MUSH;
+          else if(n2(x,y,seed+161)>.988) map[y][x]=TT.HERB;
           else if(n2(x,y,seed+150)>.98) map[y][x]=TT.RK;
           else map[y][x]=TT.G;
         }else if(biome===2){ // Forêt Ancienne
@@ -4099,6 +4104,7 @@ function genMap(){
             map[y][x]=n2(x,y,seed+400)>.4?TT.IFS:TT.TIL;
           }else if(val<dens*.68) map[y][x]=TT.BU;
           else if(n2(x,y,seed+100)>.94) map[y][x]=TT.FL;
+          else if(n2(x,y,seed+160)>.985) map[y][x]=TT.MUSH;
           else if(n2(x,y,seed+150)>.96) map[y][x]=TT.RK;
           else map[y][x]=TT.G;
         }else{ // Forêt Primordiale
@@ -6933,6 +6939,63 @@ function dGround(sx,sy,wx,wy){
   }else{
     const gi=(wx*7+wy*13)%PAL.grass.length;
     X.fillStyle=PAL.grass[gi];X.fillRect(px2,py2,s,s);
+  }
+
+  // === MICRO-FLORE: deterministic per-tile forest floor detail (biome-aware) ===
+  if(tile===TT.G&&cr<.4){
+    const fr=n2(wx,wy,777);
+    if(fr>.76){
+      const ox=4+Math.floor(n2(wx,wy,778)*20)*SC,oy=6+Math.floor(n2(wx,wy,779)*18)*SC;
+      const bx=px2+ox,by=py2+oy;
+      const boreal=wx<86,marec=wx>170;
+      const zone=boreal?4:marec?5:wy<40?3:wy<100?2:wy<170?1:0;
+      if(fr>.968){
+        // Fern — arched fronds
+        const fc=zone===4?'#4a7a6a':zone===3?'#3a5a8a':'#3d8b5e';
+        X.strokeStyle=fc;X.lineWidth=1.2*SC;
+        for(let k=-1;k<=1;k++){
+          X.beginPath();X.moveTo(bx,by+4*SC);
+          X.quadraticCurveTo(bx+k*4*SC,by-2*SC,bx+k*7*SC,by+1*SC);X.stroke();
+        }
+        X.fillStyle=fc;X.fillRect(bx-1*SC,by+2*SC,2*SC,3*SC);
+      }else if(fr>.94){
+        // Wild mushroom cluster — cap color by biome
+        const caps=zone===0?['#c0392b','#e74c3c']:zone===1?['#a0784a','#c09a6a']:zone===2?['#7a4aa0','#9b6ac0']:zone===3?['#b266ff','#d090ff']:zone===4?['#5a8aa8','#7aaac8']:['#7a8a4a','#9aaa5a'];
+        for(let k=0;k<2+Math.floor(n2(wx,wy,780)*2);k++){
+          const mx2=bx+k*4*SC,my2=by+(k%2)*3*SC;
+          X.fillStyle='#e8dcc8';X.fillRect(mx2+1*SC,my2+2*SC,2*SC,3*SC);
+          X.fillStyle=caps[k%2];X.fillRect(mx2,my2,4*SC,2.5*SC);
+          if(zone===0)X.fillStyle='#f0e0d0',X.fillRect(mx2+1*SC,my2+.5*SC,1*SC,1*SC);
+        }
+      }else if(fr>.905){
+        // Tiny wildflowers
+        const fls=zone===4?['#cfe8ff','#a8d0f0']:zone===5?['#e8d060','#d0b850']:zone===2||zone===3?['#c090e0','#e0a8f0']:['#f0e0a0','#e88ab0','#a8c8f8'];
+        for(let k=0;k<2;k++){
+          const fx2=bx+k*6*SC,fy2=by+(k%2)*4*SC;
+          X.fillStyle='#3d8b5e';X.fillRect(fx2+1*SC,fy2+2*SC,1*SC,3*SC);
+          X.fillStyle=fls[(wx+wy+k)%fls.length];
+          X.fillRect(fx2,fy2,3*SC,2*SC);X.fillRect(fx2+1*SC,fy2-1*SC,1*SC,4*SC);
+        }
+      }else if(fr>.875){
+        // Pebbles / twig
+        if(n2(wx,wy,781)>.5){
+          X.fillStyle='#8a8a82';X.fillRect(bx,by,3*SC,2*SC);
+          X.fillStyle='#9a9a92';X.fillRect(bx+4*SC,by+2*SC,2*SC,2*SC);
+        }else{
+          X.strokeStyle='#6a4a2a';X.lineWidth=1*SC;
+          X.beginPath();X.moveTo(bx,by+2*SC);X.lineTo(bx+7*SC,by);X.stroke();
+        }
+      }else{
+        // Grass tufts, swaying gently in the wind
+        const gc2=zone===4?'#5a9a8a':zone===5?'#6a8a4a':'#4aaa7c';
+        X.strokeStyle=gc2;X.lineWidth=1*SC;
+        const sway=Math.sin(gt*1.6+wx*1.7+wy)*1.2*SC;
+        for(let k=0;k<3;k++){
+          X.beginPath();X.moveTo(bx+k*2.5*SC,by+4*SC);
+          X.lineTo(bx+k*2.5*SC+sway,by-1*SC+(k%2)*SC);X.stroke();
+        }
+      }
+    }
   }
 
   // Light corruption overlay (blending)
