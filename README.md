@@ -12,6 +12,8 @@
 
 Ouvrir `index.html` dans un navigateur. Aucune dépendance requise.
 
+ZQSD/flèches : déplacer · Espace : couper / passer les dialogues · C : dash · E : interagir · F : feu de camp · P : planter · R : rituel · I : inventaire · M : musique · TAB : éditeur de tuning · L : session log
+
 ## Piliers de design
 
 - **Chaque coup de hache compte** — Irréversible, transforme l'espace.
@@ -70,13 +72,27 @@ Sous-biomes latéraux : **Marécage** (cyprès, bois rares) et **Boréal** (épi
 
 Les transitions sont matérialisées par des murs d'arbres nécessitant un niveau de hache minimum.
 
-## Raccourcis
+## Transport — deux réseaux, un axe moral *(implémenté)*
 
-| Type | Avantage | Trade-off |
-|------|----------|-----------|
-| Rivières | Transport rapide | Sens unique, cargaison limitée |
-| Chemins de crête | Au-dessus de la corruption | Exposés (vent, esprits) |
-| Passages racinaires | Protégés, sous arbres géants | **Détruits si l'arbre est coupé** |
+L'axe moral est de l'infrastructure : chaque camp a son réseau de déplacement rapide.
+
+| Réseau | Déblocage | Avantage | Coût caché |
+|--------|-----------|----------|------------|
+| **Navettes de l'Entreprise** | Zone suffisamment déboisée → front de taille + dépôt village | TP village ↔ fronts, rachat du bois sur place (70%) | Chaque trajet nourrit la Destruction ; les fronts attirent la corruption |
+| **Passages racinaires** | Toucher un arbre sacré enregistre un nœud | TP gratuit entre nœuds découverts (l'Arbre-Chant planté compte) | **Détruits à jamais si l'arbre est coupé** |
+
+Autres raccourcis : **rivières** (radeau/pont via le Castor), **souches-sentier** (+35% de vitesse sur les tuiles coupées — le chemin taillé à l'aller est l'autoroute du retour, jusqu'à la repousse).
+
+Événements aux fronts de taille : les ouvriers de l'Entreprise se font attaquer par la forêt corrompue — les sauver (90 s) rapporte de l'or, échouer inquiète le village.
+
+## Nuit *(implémenté)*
+
+La nuit doit être un choix, pas une panne d'écran.
+
+- **Pleine lune permanente** — silhouettes lisibles ; torche et lanterne achètent le détail, la couleur et la sécurité (voir venir les loups), jamais le droit de jouer.
+- **Feu de camp** (F, 4 bûches) — lumière, les loups n'approchent pas des flammes, sommeil sur place jusqu'à l'aube. S'éteint au matin. Le bois est le carburant du retour.
+- **La nuit paie** — fleurs lunaires (+1 essence spirituelle) écloses à la nuit tombée, arbres sacrés luminescents. Sortir de nuit est une opportunité, pas une taxe.
+- **Loups nocturnes** — meutes, yeux brillants dans le noir, fuient à l'aube.
 
 ## Narratif
 
@@ -95,10 +111,20 @@ Les ancêtres ont fait pareil. Le joueur est l'erreur historique. Seul à pouvoi
 
 ## Progression
 
-- **Haches** — Deux lignées (légère/lourde), progression par métaux, tronçonneuse ultime
+- **Haches** — Chaque niveau change la *capacité*, pas seulement les chiffres *(implémenté)* : Niv.2 percée (frappe l'arbre derrière), Niv.3 brise les rochers, Niv.4 chute en chaîne. Hache Légendaire (Niv.5) via la quête Théodore/Luthier
 - **Durabilité** — Réparation au forgeron, force l'arbitrage exploration/retour
-- **Village** — Forgeron, herboriste/chamane, cartographe. Évolue visuellement selon le style de jeu
-- **Regrow** — Certaines essences repoussent (noisetier, aulne, bouleau). Les essences nobles (chêne, séquoia) ne repoussent jamais
+- **Village** — Forgeron, chamane, cartographe, taverne… Les PNJ arrivent progressivement (docteur, luthier, anthropologue) et **jugent le joueur** : dialogues branchés sur les axes moraux cachés — froideur envers le destructeur, chaleur envers le restaurateur, Aldric inversé *(implémenté)*
+- **Totems de protection** *(implémenté)* — Chamane, 20 bois + 5 sève (max 3) : refoulent la corruption autour du village et rassurent les villageois
+- **Regrow** — Certaines essences repoussent (noisetier, aulne, bouleau). Les essences nobles (chêne, séquoia) ne repoussent jamais. Les arbres plantés (graines du Jardinier) repoussent en un cycle
+
+## Exploration — points d'intérêt *(implémenté, à densifier)*
+
+La forêt doit toujours tirer le joueur un écran plus loin.
+
+- **Camps du grand-père** (3, étagés en profondeur) — arc narratif en 3 chapitres (la Compagnie Von Brandt, la mousse noire, la hache brisée) + récompenses uniques. Raccord avec la quête de la Hache Légendaire
+- **Ruines anciennes** (4) — lore des ancêtres (ils ont coupé, puis fui), fouille unique
+- **Rythme** — la santé de grand-mère décline par cycle jour/nuit, pas en temps réel : explorer lentement n'est pas puni
+- *À venir : caches, clairières secrètes accessibles uniquement sans couper, accroches visuelles en bord d'écran*
 
 ## Prototype actuel
 
@@ -127,4 +153,5 @@ README.md                       — Ce fichier
 
 ---
 
-*Game Design Document v0.5 — Mars 2026 — Adrien (solo dev)*
+*Game Design Document v0.6 — Juillet 2026 — Adrien (solo dev)*
+*(v0.6 : réseaux de transport moraux, rework nuit/feu de camp, POI d'exploration, capacités de hache, dialogues moraux, totems)*
