@@ -24,6 +24,13 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
 #dlg-next{display:block;margin:6px auto 0;background:#1b4332;color:#74c69d;border:1px solid #40916c;padding:2px 14px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:9px}
 #dlg-next:hover{background:#2d6a4f}
 .si{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1b4332}.si:last-child{border:none}
+.inv-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin:4px 0}
+.inv-slot{position:relative;background:#0a1a10;border:1px solid #2d6a4f;border-radius:4px;min-height:46px;display:flex;flex-direction:column;justify-content:center;align-items:center;font-size:15px;padding:3px 1px;cursor:default}
+.inv-slot .qty{position:absolute;top:1px;right:3px;font-size:9px;color:#ffd700;font-weight:bold;text-shadow:1px 1px 0 #000}
+.inv-slot .nm{font-size:6.5px;color:#74c69d;margin-top:2px;text-align:center;line-height:1.1;max-width:100%;overflow:hidden}
+.inv-slot.usable{cursor:pointer;border-color:#52b788;box-shadow:0 0 4px rgba(82,183,136,.25)}
+.inv-slot.usable:hover{background:#1b4332}
+.inv-sect{color:#52b788;font-size:9px;letter-spacing:1px;margin:7px 0 2px;border-bottom:1px solid #1b4332;padding-bottom:1px}
 .sb{background:#1b4332;color:#d8f3dc;border:1px solid #40916c;padding:2px 8px;border-radius:2px;cursor:pointer;font-family:inherit;font-size:10px}.sb:hover{background:#2d6a4f}.sb:disabled{opacity:.3;cursor:default}
 #dth{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(18,4,4,.95);border:2px solid #8b0000;border-radius:6px;padding:18px;color:#e74c3c;font-size:12px;display:none;text-align:center;pointer-events:all;z-index:10}
 .br{display:inline-block;width:68px;height:6px;background:#111;border:1px solid #333;border-radius:2px;vertical-align:middle;margin-left:3px;overflow:hidden}
@@ -6750,37 +6757,53 @@ function updShop(){
   }
   // Handle inventory panel mode
   if(t==='INV'){
+    // === STACK-BASED INVENTORY GRID ===
     document.querySelector('#shp h2').textContent='🎒 Inventaire';
-    items=[];
-    // Consumables
-    items.push({n:`🧪 Potions: ${P._potions||0}`,c:0,cu:1,a:()=>{if((P._potions||0)>0){P._potions--;SESSION.potionsUsed++;P.hp=Math.min(P.mhp,P.hp+3);ft2(P.x,P.y,'❤️+3','#e74c3c');logEvent('ITEM','Potion utilisée',{hp:P.hp,stock:P._potions})}}});
-    items.push({n:`🌀 Encens: ${P._encensStock||0}`,c:0,cu:1,a:()=>{if((P._encensStock||0)>0){P._encensStock--;SESSION.encensUsed++;P._encens=gt+60;ft2(P.x,P.y,'🌀 60s','#74c69d');logEvent('ITEM','Encens utilisé',{duration:60,stock:P._encensStock})}}});
-    // Equipment
-    items.push({n:`🪓 Hache Niv.${P.axe} (dég:${P.pow})`,c:9999,a:()=>{}});
-    items.push({n:`📦 Sac: ${invUsed()}/${P.invCap}`,c:9999,a:()=>{}});
-    // Wood breakdown by type
-    items.push({n:`── Bois (${P.w} total, val: ${P.wv||0} or) ──`,c:9999,a:()=>{}});
-    for(const[tt,count] of Object.entries(P.woodByType)){
-      if(count>0){const ess=ESS[tt];if(ess)items.push({n:`  🌲 ${ess.name}: ${count}`,c:9999,a:()=>{}});}
-    }
-    items.push({n:`💧 Sève: ${P.sap}`,c:9999,a:()=>{}});
-    items.push({n:`✨ Essences spirituelles: ${P.essences||0}`,c:9999,a:()=>{}});
-    if(P.seeds>0) items.push({n:`🌱 Graines: ${P.seeds}`,c:9999,a:()=>{}});
-    if(P._hasArbreChantSeed) items.push({n:`🌳 Graine d'Arbre-Chant`,c:9999,a:()=>{}});
-    if(P._brokenAxeItem) items.push({n:`⚔️ Hache Légendaire Brisée`,c:9999,a:()=>{}});
-    if(P._hasLegendaryAxe) items.push({n:`⚔️ Hache Légendaire (Niv.5)`,c:9999,a:()=>{}});
-    if((P._instruments||[]).length>0){
-      items.push({n:`── Instruments (${P._instruments.length}) ──`,c:9999,a:()=>{}});
-      P._instruments.forEach(i=>items.push({n:`  🎵 ${i.name}`,c:9999,a:()=>{}}));
-    }
-    // Active contract reminder
+    const co2=document.getElementById('si2');co2.style.display='block';
+    const used=invUsed(),cap=P.invCap,pct=Math.min(100,used/cap*100);
+    const slot=(icon,qty,name,cls,onclick,title)=>
+      `<div class="inv-slot${cls?' '+cls:''}"${onclick?` onclick="${onclick}"`:''}${title?` title="${title}"`:''}>${qty>1?`<span class="qty">${qty}</span>`:''}<span>${icon}</span><span class="nm">${name}</span></div>`;
+    let h=`<div style="font-size:9px;color:#74c69d;margin-bottom:2px">Sac : ${used}/${cap} · <span style="color:#ffd700">💰 ${P.g} or</span>${P._debt>0?` · <span style="color:#e74c3c">📋 Dette ${P._debt}</span>`:''}</div>`;
+    h+=`<div style="height:5px;background:#111;border:1px solid #2d6a4f;border-radius:2px;overflow:hidden;margin-bottom:2px"><div style="height:100%;width:${pct}%;background:${pct>90?'#e74c3c':pct>70?'#e9c46a':'#52b788'}"></div></div>`;
+    // Ressources & récolte
+    const woodStacks=Object.entries(P.woodByType||{}).filter(([,c])=>c>0);
+    let res='';
+    woodStacks.forEach(([tt,c])=>{const ess2=ESS[tt];res+=slot('🪵',c,ess2?ess2.name:'Bois','', '', `${c} × ${ess2?ess2.name:'?'} (${ess2?c*ess2.gold:'?'} or)`)});
+    if(P.sap>0)res+=slot('💧',P.sap,'Sève');
+    if(P.herbs>0)res+=slot('🌿',P.herbs,'Herbes');
+    if(P.mushrooms>0)res+=slot('🍄',P.mushrooms,'Champignons');
+    if((P.essences||0)>0)res+=slot('✨',P.essences,'Essences sp.');
+    if((P.seeds||0)>0)res+=slot('🌱',P.seeds,'Graines');
+    if(res)h+=`<div class="inv-sect">🪵 RESSOURCES (${P.w} bois · valeur ${P.wv||0} or)</div><div class="inv-grid">${res}</div>`;
+    // Consommables (cliquables)
+    let cons='';
+    if((P._potions||0)>0)cons+=slot('🧪',P._potions,'Potion ❤️+3','usable','invUsePotion()','Cliquer pour boire');
+    if((P._encensStock||0)>0)cons+=slot('🌀',P._encensStock,'Encens 60s','usable','invUseEncens()','Cliquer pour brûler (stamina ×2)');
+    if((P._torches||0)>0)cons+=slot(P._torchActive?'🔥':'🕯️',P._torches,P._torchActive?'Torche (allumée)':'Torche','usable','invToggleTorch()','Cliquer pour allumer/éteindre');
+    if(cons)h+=`<div class="inv-sect">🧪 CONSOMMABLES — cliquer pour utiliser</div><div class="inv-grid">${cons}</div>`;
+    // Équipement & objets de quête
+    let eq='';
+    eq+=slot('🪓',1,`Hache Niv.${P.axe}`,'','',`Dégâts ${P.pow} · Durabilité ${P._axeDur}/${P._axeMaxDur}`);
+    if(P._hasLegendaryAxe)eq+=slot('⚔️',1,'Hache Légendaire');
+    if(P._brokenAxeItem)eq+=slot('🗡️',1,'Hache brisée');
+    if(P._hasArbreChantSeed)eq+=slot('🌳',1,'Graine d\'Arbre-Chant');
+    if(P._hasLantern)eq+=slot('🏮',1,'Lanterne');
+    if(P._hasRaftPlan)eq+=slot('🛶',1,'Plan radeau');
+    if(P._hasBridgePlan)eq+=slot('🌉',1,'Plan pont');
+    if(P._hasBarricadePlan)eq+=slot('🛡️',1,'Plan barricade');
+    (P._instruments||[]).forEach(ins=>{eq+=slot('🎵',1,ins.name)});
+    h+=`<div class="inv-sect">🪓 ÉQUIPEMENT</div><div class="inv-grid">${eq}</div>`;
+    // Contrat actif
     if(P._contract){
       const ct=P._contract;
       const timeLeft=Math.max(0,ct.deadline-gt);
       const isLate=timeLeft<=0;
-      items.push({n:`── Contrat actif ──`,c:9999,a:()=>{}});
-      items.push({n:`📜 ${ct.amount}× ${ct.name} ${isLate?'⏰ RETARD':`⏱️${Math.floor(timeLeft)}s`}`,c:9999,a:()=>{}});
+      const held=Math.min(P.woodByType[ct.type]||0,ct.amount);
+      h+=`<div class="inv-sect">📜 CONTRAT</div><div style="font-size:10px;color:${isLate?'#e74c3c':'#daa520'};padding:2px 0">${ct.amount}× ${ct.name} — ${held}/${ct.amount} ${isLate?'⏰ EN RETARD':`⏱️ ${timeLeft>60?Math.floor(timeLeft/60)+'m'+Math.floor(timeLeft%60)+'s':Math.floor(timeLeft)+'s'}`}</div>`;
     }
+    if(!res&&!cons)h+='<div style="font-size:9px;color:#557;padding:6px 0;text-align:center">Ton sac est vide. La forêt attend. 🌲</div>';
+    co2.innerHTML=h;
+    return;
   }
   const co=document.getElementById('si2');co.innerHTML='';
   items.forEach(it=>{
@@ -6824,6 +6847,22 @@ function updShop(){
     co.appendChild(d2);
   });
 }
+// Inventory quick-use actions (stack grid onclick handlers)
+function invUsePotion(){
+  if((P._potions||0)>0){P._potions--;SESSION.potionsUsed++;P.hp=Math.min(P.mhp,P.hp+3);ft2(P.x,P.y,'❤️+3','#e74c3c');sfxPickup();logEvent('ITEM','Potion utilisée',{hp:P.hp,stock:P._potions})}
+  updShop();
+}
+function invUseEncens(){
+  if((P._encensStock||0)>0){P._encensStock--;SESSION.encensUsed++;P._encens=gt+60;ft2(P.x,P.y,'🌀 Stamina ×2 pendant 60s','#74c69d');sfxPickup();logEvent('ITEM','Encens utilisé',{duration:60,stock:P._encensStock})}
+  updShop();
+}
+function invToggleTorch(){
+  if(P._hasLantern){ft2(P.x,P.y,'🏮 La lanterne éclaire déjà','#e9c46a')}
+  else if(P._torchActive){P._torchActive=false;ft2(P.x,P.y,'🔥 Torche éteinte','#888')}
+  else if((P._torches||0)>0){P._torchActive=true;ft2(P.x,P.y,'🔥 Torche allumée!','#ffa500')}
+  updShop();
+}
+
 function respawn(){
   dead=false;P.hp=P.mhp;P.sta=P.msta;P.x=128;P.y=210;P.iv=2;
   // Progressive death penalty — lighter in early game
