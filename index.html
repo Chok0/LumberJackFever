@@ -4446,7 +4446,7 @@ function genMap(){
 }
 function isT(t){return !!ESS[t]}
 function isBld(t){return t===TT.FORGE||t===TT.CHAM||t===TT.TAV||t===TT.EMIS||t===TT.HOME||t===TT.SH||t===TT.CARTO||t===TT.ANTHRO||t===TT.HERM||t===TT.LUTH||t===TT.HERM_E||t===TT.HERM_J||t===TT.HERM_T||t===TT.BROKEN_AXE||t===TT.CABIN_ABAND||t===TT.DOCTOR||t===TT.ARCHITECT||t===TT.CASTOR||t===TT.TRUCK||t===TT.CAMP||t===TT.GCAMP||t===TT.RUIN}
-function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART||t===TT.TOTEM}
+function isDeco(t){return t===TT.WELL||t===TT.FENCE||t===TT.CRATE||t===TT.LAMP||t===TT.CART||t===TT.TOTEM||t===TT.CACHE||t===TT.SECRET}
 function isS(t){return isT(t)||t===TT.WA||t===TT.RK||isBld(t)||isDeco(t)||t===TT.SEED_TILE||t===TT.RIVER||t===TT.VIL_BARRICADE}
 function isPlayerBlocked(t){return isS(t)&&t!==TT.BARR}
 
@@ -4646,6 +4646,8 @@ function inVillageZone(tx,ty){
 // Grandfather's camps (3-chapter story arc, one per depth) + ancient ruins (ancestors' lore + loot).
 // The forest should always have something pulling you one screen further.
 function placePOIs(){
+  if(!P._cachesPos||!P._cachesPos.length)placeCaches();
+  if(!P._secretsPos||!P._secretsPos.length)placeSecretClearings();
   if(P._gcampsPos&&P._gcampsPos.length)return;
   P._gcampsPos=[];
   const depths=[{y:150,x0:96,x1:160},{y:88,x0:96,x1:160},{y:44,x0:100,x1:156}];
@@ -4671,10 +4673,90 @@ function placePOIs(){
     }
   });
 }
+// ============ CACHES ENFOUIES ============
+// One-time loot stashes hidden through the forest — the deeper, the richer.
+function placeCaches(){
+  P._cachesPos=[];
+  const bands=[
+    {y0:175,y1:200,x0:90,x1:166},{y0:140,y1:170,x0:90,x1:166},
+    {y0:105,y1:135,x0:90,x1:166},{y0:70,y1:98,x0:90,x1:166},
+    {y0:45,y1:65,x0:92,x1:164},{y0:12,y1:38,x0:96,x1:160},
+    {y0:60,y1:160,x0:10,x1:80},   // boréal
+    {y0:60,y1:160,x0:176,x1:246}, // marécage
+  ];
+  bands.forEach(b=>{
+    for(let att=0;att<250;att++){
+      const x=b.x0+Math.floor(Math.random()*(b.x1-b.x0));
+      const y=b.y0+Math.floor(Math.random()*(b.y1-b.y0));
+      if(y<3||y>=MH-16)continue;
+      if(map[y]?.[x]!==TT.G)continue;
+      map[y][x]=TT.CACHE;P._cachesPos.push({x,y});break;
+    }
+  });
+}
+// ============ CLAIRIÈRES SECRÈTES ============
+// A ring of trees with a single hidden gap. Enter without cutting and the
+// spirits reward you; hack your way in and they withdraw. (Zéro morale explicite —
+// the mechanic IS the message.)
+function placeSecretClearings(){
+  P._secretsPos=[];
+  const spots=[
+    {yMin:176,yMax:198,tree:TT.BOU},  // Lisière
+    {yMin:110,yMax:160,tree:TT.CHE},  // Forêt Mixte
+    {yMin:48,yMax:92,tree:TT.TIL},    // Forêt Ancienne
+  ];
+  spots.forEach((sp2,i)=>{
+    for(let att=0;att<250;att++){
+      const cx=94+Math.floor(Math.random()*66);
+      const cy=sp2.yMin+Math.floor(Math.random()*(sp2.yMax-sp2.yMin));
+      if(cy<5||cy>=MH-16)continue;
+      // Need buildable terrain: reject if any solid special tile in radius 4
+      let ok=true;
+      for(let dy=-4;dy<=4&&ok;dy++)for(let dx=-4;dx<=4&&ok;dx++){
+        const t=map[cy+dy]?.[cx+dx];
+        if(t===undefined||isBld(t)||t===TT.TJ||t===TT.PRIM||t===TT.RIVER||t===TT.WA||t===TT.CACHE||t===TT.SECRET)ok=false;
+      }
+      if(!ok)continue;
+      const rec=carveSecretClearing(cx,cy,sp2.tree,i);
+      P._secretsPos.push(rec);break;
+    }
+  });
+}
+function carveSecretClearing(cx,cy,tree,i){
+  const gapA=Math.random()*Math.PI*2; // hidden entrance direction
+  const ring=[];
+  for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
+    const nx=cx+dx,ny=cy+dy;
+    if(nx<2||ny<2||nx>=MW-2||ny>=MH-14)continue;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist<2.4){
+      map[ny][nx]=TT.G; // inner sanctuary
+    }else if(dist<3.6){
+      // Ring of trees — except the single gap
+      let a=Math.atan2(dy,dx);
+      let da=Math.abs(a-gapA);if(da>Math.PI)da=Math.PI*2-da;
+      if(da<.42){map[ny][nx]=TT.G;continue} // the hidden entrance
+      map[ny][nx]=tree;ring.push({x:nx,y:ny});
+    }
+  }
+  // Flowers inside hint at the place's nature
+  [[cx-1,cy+1],[cx+1,cy-1],[cx+1,cy+1]].forEach(([fx,fy])=>{if(map[fy]?.[fx]===TT.G)map[fy][fx]=TT.FL});
+  map[cy][cx]=TT.SECRET;
+  return {x:cx,y:cy,tree,ring,collected:false};
+}
 // Re-stamp POI tiles after loading a save that predates them
 function restampPOIs(){
   (P._gcampsPos||[]).forEach(c=>{if(map[c.y]&&map[c.y][c.x]===TT.G)map[c.y][c.x]=TT.GCAMP});
   (P._ruinsPos||[]).forEach(c=>{if(map[c.y]&&map[c.y][c.x]===TT.G)map[c.y][c.x]=TT.RUIN});
+  (P._cachesPos||[]).forEach(c=>{if(map[c.y]&&map[c.y][c.x]===TT.G)map[c.y][c.x]=TT.CACHE});
+  // Rebuild secret clearings missing from an older save's map
+  (P._secretsPos||[]).forEach(s=>{
+    if(s.collected)return;
+    if(map[s.y]&&map[s.y][s.x]!==TT.SECRET){
+      (s.ring||[]).forEach(r=>{const t=map[r.y]?.[r.x];if(t===TT.G||t===TT.BU||t===TT.FL)map[r.y][r.x]=s.tree});
+      if(map[s.y][s.x]===TT.G||map[s.y][s.x]===TT.FL)map[s.y][s.x]=TT.SECRET;
+    }
+  });
 }
 
 // ============ FEU DE CAMP & NUIT QUI PAIE ============
@@ -5595,6 +5677,48 @@ function updP2(d){
           if(!P._guardianAwake&&getDestruction()<=0.4) html+='<div class="si" style="color:#52b788;font-size:9px">Le Gardien est en paix. La forêt est calme.</div>';
           if(P._guardianDefeated) html+='<div class="si" style="color:#e74c3c;font-size:9px">Le Gardien gît au sol. L\'arbre porte des cicatrices.</div>';
           si2.innerHTML=html;
+          return;
+        }
+      }
+      // Check for buried caches & secret clearing stones
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        const nx2=px2+dx,ny2=py2+dy;
+        if(nx2<0||ny2<0||nx2>=MW||ny2>=MH)continue;
+        const t=map[ny2][nx2];
+        if(t===TT.CACHE){
+          map[ny2][nx2]=TT.G;
+          const depth=Math.max(0,1-(ny2/MH));
+          const gold=5+Math.floor(depth*28+Math.random()*8);
+          P.g+=gold;SESSION.totalGoldEarned+=gold;
+          let bonus='';
+          const roll=Math.random();
+          if(roll<.4){const es=1+Math.floor(depth*2);P.essences=(P.essences||0)+es;bonus=` ✨+${es}`}
+          else if(roll<.7&&invFree()>=2){P.sap+=2;bonus=' 💧+2'}
+          else{P._torches=(P._torches||0)+2;bonus=' 🕯️+2'}
+          ft2(nx2+.5,ny2-.5,`✦ Cache déterrée ! 💰+${gold}${bonus}`,'#ffd700');
+          sp(nx2+.5,ny2+.5,'#ffd700',12);sp(nx2+.5,ny2+.5,'#8a6a3a',8);
+          sfxSell();addComprehension(1);hitstop=Math.max(hitstop,.05);
+          logEvent('CACHE','Cache déterrée',{x:nx2,y:ny2,gold});
+          return;
+        }
+        if(t===TT.SECRET){
+          const sec=(P._secretsPos||[]).find(s=>s.x===nx2&&s.y===ny2);
+          const intact=!!sec&&(sec.ring||[]).every(r=>isT(map[r.y]?.[r.x]));
+          map[ny2][nx2]=TT.G;
+          if(sec)sec.collected=true;
+          if(intact){
+            P.essences=(P.essences||0)+3;
+            P.hp=Math.min(P.mhp,P.hp+2);
+            addRestauration(3);
+            announce('❀ Clairière aux esprits','Le cercle est intact — les esprits te bénissent (✨+3 ❤️+2)','#b266ff');
+            sp(nx2+.5,ny2+.5,'#b266ff',18);sfxPurify();
+            logEvent('SECRET','Clairière secrète — cercle intact',{x:nx2,y:ny2});
+          }else{
+            P.essences=(P.essences||0)+1;
+            ft2(nx2+.5,ny2-.5,'Les esprits se sont retirés... (cercle brisé) ✨+1','#8a6a9a');
+            sp(nx2+.5,ny2+.5,'#6a4a7a',8);sfxCorruption();
+            logEvent('SECRET','Clairière secrète — cercle brisé',{x:nx2,y:ny2});
+          }
           return;
         }
       }
@@ -7340,6 +7464,30 @@ function dObj(wx,wy){
   else if(tile===TT.SIGN)dSp('sign_s',wx,wy,4,0);
   else if(tile===TT.HERB){dSp('herb_s',wx,wy,8+Math.floor(Math.sin(gt*2+wx)*1.5),14);if(Math.random()<.005)amb.push({x:wx+.5,y:wy+.3,vx:(Math.random()-.5)*.3,vy:-.5-Math.random()*.3,l:.8+Math.random(),ml:1.2,c:'rgba(100,220,140,0.5)',s:.8,rot:0})}
   else if(tile===TT.MUSH)dSp('mush_s',wx,wy,10,18);
+  else if(tile===TT.CACHE){
+    // Buried stash — earth mound, plank corner, rope stake, occasional glint
+    X.fillStyle='rgba(8,20,12,.25)';X.beginPath();X.ellipse(px2+16*SC,py2+26*SC,12*SC,4*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#6a5030';X.beginPath();X.ellipse(px2+16*SC,py2+20*SC,11*SC,7*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#7a6040';X.beginPath();X.ellipse(px2+15*SC,py2+18*SC,9*SC,5*SC,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#8a6a3a';X.save();X.translate(px2+20*SC,py2+14*SC);X.rotate(-.5);X.fillRect(0,0,10*SC,4*SC);X.restore();
+    X.fillStyle='#5a3a1a';X.fillRect(px2+8*SC,py2+16*SC,3*SC,6*SC);
+    const gl=Math.sin(gt*2.5+wx)*.5+.5;
+    if(gl>.7){X.globalAlpha=(gl-.7)*2;X.fillStyle='#ffd700';X.fillRect(px2+18*SC,py2+12*SC,2*SC,2*SC);X.globalAlpha=1}
+  }
+  else if(tile===TT.SECRET){
+    // Pierre-fleur — mossy stone crowned by a luminous bloom (heart of a secret clearing)
+    const pl=.6+Math.sin(gt*2+wx)*.3;
+    X.fillStyle='rgba(8,20,12,.3)';X.beginPath();X.ellipse(px2+16*SC,py2+26*SC,11*SC,4*SC,0,0,Math.PI*2);X.fill();
+    X.globalAlpha=.10+pl*.08;X.fillStyle='#b266ff';X.beginPath();X.arc(px2+16*SC,py2+10*SC,20*SC,0,Math.PI*2);X.fill();X.globalAlpha=1;
+    X.fillStyle='#6a6a72';X.fillRect(px2+10*SC,py2+12*SC,12*SC,12*SC);
+    X.fillStyle='#7a7a84';X.fillRect(px2+11*SC,py2+13*SC,10*SC,5*SC);
+    X.fillStyle='#2d6a4f';X.fillRect(px2+10*SC,py2+21*SC,5*SC,3*SC);
+    X.fillStyle='#3a5a3a';X.fillRect(px2+15*SC,py2+4*SC,2*SC,9*SC);
+    X.fillStyle=`rgba(178,102,255,${pl})`;
+    X.fillRect(px2+11*SC,py2+2*SC,10*SC,4*SC);X.fillRect(px2+14*SC,py2-2*SC,4*SC,12*SC);
+    X.fillStyle=`rgba(240,220,255,${pl})`;X.fillRect(px2+15*SC,py2+3*SC,2*SC,2*SC);
+    if(Math.random()<.04)amb.push({x:wx+.5,y:wy,vx:(Math.random()-.5)*.2,vy:-.25,l:1.5,ml:2,c:'#b266ff',s:.9,rot:0});
+  }
   else if(ess){
     const cat=SPRITE_CAT[ess.spr]||'s';
     const key=ess.spr;
@@ -7865,6 +8013,18 @@ function dInteractPrompts(){
           X.fillStyle='#b266ff';X.fillText('R Purifier',sx+T/2*SC,sy-30*SC+bob+2*SC);
           X.globalAlpha=1;
         }
+      }
+      if(t===TT.CACHE||t===TT.SECRET){
+        const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
+        const bob=Math.sin(gt*2)*3*SC;
+        X.globalAlpha=.85;
+        X.fillStyle=t===TT.CACHE?'rgba(50,40,8,.85)':'rgba(40,16,60,.85)';
+        const bw3=52*SC,bh3=12*SC;
+        X.beginPath();if(X.roundRect)X.roundRect(sx+T/2*SC-bw3/2,sy-26*SC+bob-bh3/2,bw3,bh3,3*SC);else X.rect(sx+T/2*SC-bw3/2,sy-26*SC+bob-bh3/2,bw3,bh3);X.fill();
+        X.font=`bold ${7*SC}px monospace`;X.textAlign='center';
+        X.fillStyle=t===TT.CACHE?'#ffd700':'#d0a8ff';
+        X.fillText(t===TT.CACHE?'E Déterrer':'E Pierre-fleur',sx+T/2*SC,sy-26*SC+bob+2*SC);
+        X.globalAlpha=1;
       }
             if(isBld(t)&&t!==TT.SH){
         const nd=NPC_DATA[t];
