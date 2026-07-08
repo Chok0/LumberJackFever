@@ -3754,6 +3754,15 @@ function getDialogue(npcType){
   // Village unrest: villagers complain when mobs are near
   const unrest=P._vilUnrest||0;
   const isVillager=npcType===TT.TAV||npcType===TT.FORGE||npcType===TT.HOME||npcType===TT.CHAM||npcType===TT.CARTO||npcType===TT.ANTHRO||npcType===TT.DOCTOR;
+  // Siege: grandma is the only open door — she sends you back out to fight
+  if(npcType===TT.HOME&&vilSiege.active){
+    lines.length=0;
+    lines.push("Elles sont là... je les entends gratter aux murs.");
+    lines.push("Les autres n'ouvriront pas tant que ces choses rôdent. Chasse-les, mon petit.");
+    lines.push("Et après... il faudra choisir : des murs pour se cacher, ou purifier la terre pour de bon.");
+    NPC_VISITS[npcType]=(NPC_VISITS[npcType]||0)+1;
+    return lines;
+  }
   if(isVillager && unrest>20){
     const barrLevel=vilBarricadeLevel();
     if(unrest>70&&barrLevel<0.5){
@@ -3974,12 +3983,14 @@ function genMap(){
         }
         if(!inVil && map[y][x]===TT.G && vy>=1 && vy<=10){
           // vy 1-5: mostly clear (village outskirts, safe for beginners)
-          // vy 6-10: sparse trees (transition to lisière)
+          // vy 6-10: denser woods hugging the village (forest presses in on all sides)
           if(vy>=6){
             const r=n2(x,y,seed+500);
-            if(r>.92) map[y][x]=TT.BU;
-            else if(r>.82) map[y][x]=TT.BOU;
-            else if(r>.78) map[y][x]=TT.NOI;
+            if(r>.90) map[y][x]=TT.BU;
+            else if(r>.72) map[y][x]=TT.BOU;
+            else if(r>.64) map[y][x]=TT.NOI;
+            else if(r>.58) map[y][x]=TT.AUL;
+            else if(r>.55) map[y][x]=TT.FL;
           }else{
             // Only flowers and occasional bush near village
             if(n2(x,y,seed+500)>.93) map[y][x]=TT.FL;
@@ -4107,6 +4118,22 @@ function genMap(){
       }
     }
   }
+  // === DENSE BELT AROUND THE VILLAGE ===
+  // The forest hugs the village: a thick birch/hazel belt just north of the palisade.
+  // Cheap tutorial essences — but every stump here feeds corruption AT the village doorstep.
+  for(let y=VIL_Y-13;y<VIL_Y;y++){
+    for(let x=0;x<MW;x++){
+      if(Math.abs(x-CX)<=3)continue; // keep the main path clear
+      if(map[y][x]!==TT.G)continue;
+      const r=n2(x,y,seed+520);
+      const belt=1-(VIL_Y-y)/13; // denser closer to the village
+      if(r>.62-belt*.14){
+        const r2=n2(x,y,seed+521);
+        map[y][x]=r2<.38?TT.BOU:r2<.62?TT.NOI:r2<.8?TT.AUL:r2<.9?TT.BU:TT.ERA;
+      }else if(r>.55-belt*.1) map[y][x]=n2(x,y,seed+522)>.5?TT.FL:TT.BU;
+    }
+  }
+
   // Place sacred trees: 1-2 per biome as per design doc
   const sacredPositions = [];
   const placeSacred=(yMin,yMax,seedOff)=>{
@@ -4648,13 +4675,14 @@ function restampPOIs(){
 // Nightfall asks a question: camp here (costs wood), push on in the moonlight, or head home?
 // The campfire is light + wolf repellent + field sleep. It burns out at sunrise.
 function placeCampfire(){
+  // In the village, F raises a barricade instead of a fire (no fires near the houses)
+  if(P.y>MH-14){doBuildBarricade();return}
   if(P.w<4){ft2(P.x,P.y,'Il faut 4 bûches pour un feu de camp','#e74c3c');return}
   const fi=Math.max(0,Math.min(3,P.f||0));
   const tx=Math.floor(P.x+[0,1,0,-1][fi]),ty=Math.floor(P.y+[-1,0,1,0][fi]);
   if(tx<1||ty<1||tx>=MW-1||ty>=MH-1){ft2(P.x,P.y,'Pas ici','#aaa');return}
   const t=map[ty][tx];
   if(t!==TT.G&&t!==TT.ST&&t!==TT.FL&&t!==TT.BU){ft2(P.x,P.y,'Il faut un sol dégagé devant toi','#e9c46a');return}
-  if(P.y>MH-14){ft2(P.x,P.y,'Pas de feu dans le village !','#e9c46a');return}
   P.w-=4;P.wv=Math.max(0,(P.wv||0)-4);
   let left=4;for(const k in P.woodByType){const take=Math.min(left,P.woodByType[k]);P.woodByType[k]-=take;left-=take;if(left<=0)break}
   map[ty][tx]=TT.CAMP;
@@ -5035,8 +5063,8 @@ function spawnE(){
   ents.push({x,y,tp:isG?'go':'sh',hp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,mhp:isG?3+Math.floor(age)+hpB:1+Math.floor(age*.5)+hpB,spd:isG?.45+(escalated?.15:0):1.05+(escalated?.3:0),dmg:isG?2+dmgB:1+dmgB,ht:0,ar:isG?5:8,mt:Math.random()*2,wb:Math.random()*6,fr:0})}}}
 function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;
 // Despawn enemies that wander too far from corruption (safe zone protection)
-const eCorr=corr[Math.floor(e.y)]?.[Math.floor(e.x)]||0;if(eCorr<0.05&&!e.evt){e._safeT=(e._safeT||0)+d;if(e._safeT>5){ents.splice(i,1);continue}}else{e._safeT=0}
-const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){hitstop=Math.max(hitstop,.05);sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
+const eCorr=corr[Math.floor(e.y)]?.[Math.floor(e.x)]||0;if(eCorr<0.05&&!e.evt&&!e.raid){e._safeT=(e._safeT||0)+d;if(e._safeT>5){ents.splice(i,1);continue}}else{e._safeT=0}
+const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.raid){const gx=128-e.x,gy=(MH-11)-e.y,gd=Math.sqrt(gx*gx+gy*gy);if(gd>1.5){const nx=gx/gd*e.spd*.8*d,ny=gy/gd*e.spd*.8*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}else{e.x+=(Math.random()-.5)*e.spd*d*2}}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){hitstop=Math.max(hitstop,.05);sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
 function hurtP(dmg,iv,ht,shk,col,n,attacker){
@@ -5139,6 +5167,16 @@ function initFigurants(){
 function updFigurants(d){
   const VIL_Y=MH-12,CX=128;
   figurants.forEach(f=>{
+    // Siege: sprint home, then stay hidden until the village is cleaned
+    if(f.fleeT>0){
+      f.fleeT-=d;
+      const dx=f.tx-f.x,dy=f.ty-f.y,dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<.6||f.fleeT<=0){f.hiding=true;f.fleeT=0;return}
+      f.x+=dx/dist*2.4*d;f.y+=dy/dist*2.4*d;f.wa+=d*14;
+      f.f=Math.abs(dy)>Math.abs(dx)?(dy>0?2:0):(dx>0?1:3);
+      return;
+    }
+    if(f.hiding){if(!vilSiege.active)f.hiding=false;return}
     if(f.waitT>0){f.waitT-=d;return;}
     const dx=f.tx-f.x,dy=f.ty-f.y;
     const dist=Math.sqrt(dx*dx+dy*dy);
@@ -5158,6 +5196,7 @@ function updFigurants(d){
 }
 function dFigurants(){
   figurants.forEach(f=>{
+    if(f.hiding)return; // sheltered indoors during a siege
     const sx=(f.x-smCam.x)*T*SC,sy=(f.y-smCam.y)*T*SC;
     if(sx<-50*SC||sy<-50*SC||sx>CV.width+50*SC||sy>CV.height+50*SC)return;
     const sc=SC;
@@ -5554,7 +5593,10 @@ function updP2(d){
         }
       }
       // Check for buildings FIRST (castor near river must take priority)
-      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
+      for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){const nx2=px2+dx,ny2=py2+dy;if(nx2>=0&&ny2>=0&&nx2<MW&&ny2<MH){const t=map[ny2][nx2];if(isBld(t)){
+        // Siege: every village door is bolted shut except grandma's house
+        if(vilSiege.active&&ny2>=MH-12&&t!==TT.HOME){ft2(nx2+.5,ny2-.5,'🔒 Porte verrouillée !','#e74c3c');sfxHit();shake=.1;return}
+        shopOn=true;curShop=t;sfxShop();document.getElementById('shp').style.display='block';startDialogue(t,()=>{updShop()});return}}}
       // Check for River interaction (build raft / build bridge)
       for(let dy=-2;dy<=2;dy++)for(let dx=-2;dx<=2;dx++){
         const nx2=px2+dx,ny2=py2+dy;
@@ -6771,6 +6813,8 @@ let _objShown='';
 function getCurrentObjective(){
   if(introActive||endingActive||dead)return null;
   if(gt<5)return null;
+  if(vilSiege.active)return '🚨 Village attaqué ! Élimine les créatures corrompues (ESPACE).';
+  if((P._vilUnrest||0)>50)return 'Le village a peur : barricades (F au village) ou purifie la terre (R).';
   if(P._contractsDone===0&&P.w===0&&P.g===0)return 'Explore le village. Parle aux habitants (E).';
   if(P._contractsDone===0&&P.w>0&&P.g<10)return 'Vends ton bois : Taverne ou Emissaire (E).';
   if(P._contractsDone===0&&P.g>=10)return "L'Emissaire propose des contrats lucratifs.";
@@ -7621,6 +7665,14 @@ function dFX(){
     FX.globalAlpha=1;
   }
 
+  // Siege alarm — red pulse over the whole screen while the village is under attack
+  if(vilSiege.active){
+    const pu=.06+Math.abs(Math.sin(gt*3))*.07;
+    const sg=FX.createRadialGradient(FCV.width/2,FCV.height/2,FCV.width*.3,FCV.width/2,FCV.height/2,FCV.width*.7);
+    sg.addColorStop(0,'rgba(0,0,0,0)');sg.addColorStop(1,`rgba(200,20,20,${pu})`);
+    FX.fillStyle=sg;FX.fillRect(0,0,FCV.width,FCV.height);
+  }
+
   // Vignette (much stronger at night)
   const vigStr=.18+depth*.1+nightMul*.35;
   const vigG=FX.createRadialGradient(FCV.width/2,FCV.height/2,FCV.width*.28,FCV.width/2,FCV.height/2,FCV.width*.68);
@@ -7753,25 +7805,26 @@ function dInteractPrompts(){
       }
             if(isBld(t)&&t!==TT.SH){
         const nd=NPC_DATA[t];
+        const locked=vilSiege.active&&ny2>=MH-12&&t!==TT.HOME;
         const sx=(nx2-smCam.x)*T*SC,sy=(ny2-smCam.y)*T*SC;
         const bob=Math.sin(gt*3)*3*SC;
-        // "E" prompt bubble
+        // "E" prompt bubble (or padlock when the village is under siege)
         X.globalAlpha=.85;
-        X.fillStyle='rgba(8,16,10,.9)';
+        X.fillStyle=locked?'rgba(30,6,6,.9)':'rgba(8,16,10,.9)';
         const bw=44*SC,bh=14*SC;
         X.beginPath();
         (X.roundRect?X.roundRect.bind(X):X.rect.bind(X))(sx+T/2*SC-bw/2,sy-36*SC+bob-bh/2,bw,bh,3*SC);
         X.fill();
-        X.strokeStyle=nd?nd.borderCol:'#52b788';
+        X.strokeStyle=locked?'#e74c3c':(nd?nd.borderCol:'#52b788');
         X.lineWidth=1*SC;
         X.stroke();
         X.font=`bold ${8*SC}px monospace`;
         X.textAlign='center';
-        X.fillStyle=nd?nd.borderCol:'#52b788';
-        X.fillText('E',sx+T/2*SC-10*SC,sy-36*SC+bob+3*SC);
+        X.fillStyle=locked?'#e74c3c':(nd?nd.borderCol:'#52b788');
+        X.fillText(locked?'🔒':'E',sx+T/2*SC-10*SC,sy-36*SC+bob+3*SC);
         X.font=`${6*SC}px monospace`;
-        X.fillStyle='#b7e4c7';
-        X.fillText(nd?nd.name:'',sx+T/2*SC+6*SC,sy-36*SC+bob+2*SC);
+        X.fillStyle=locked?'#e74c3c':'#b7e4c7';
+        X.fillText(locked?'Fermé':(nd?nd.name:''),sx+T/2*SC+6*SC,sy-36*SC+bob+2*SC);
         X.globalAlpha=1;
         return; // only show one prompt
       }
@@ -8518,11 +8571,14 @@ function doBuildBridge(rx,ry){
   addMaitrise(2);
 }
 function doBuildBarricade(){
-  const barrCost=8;
-  if(P.w<barrCost){ft2(P.x,P.y,'Pas assez de bûches!','#e74c3c');return}
-  if(!P._hasBarricadePlan){ft2(P.x,P.y,'Il te faut les plans!','#e74c3c');return}
+  // Without the Castor's plans you can still improvise under pressure — it just wastes wood
+  const improvised=!P._hasBarricadePlan;
+  if(improvised&&!vilSiege.active&&(P._vilUnrest||0)<=20){ft2(P.x,P.y,'🦫 Le Castor vend des plans de barricade près des rivières','#b58863');return}
+  const barrCost=improvised?12:8;
+  if(P.w<barrCost){ft2(P.x,P.y,`Pas assez de bûches (${P.w}/${barrCost})!`,'#e74c3c');return}
   P.w-=barrCost;
   P.wv=Math.max(0,(P.wv||0)-barrCost);
+  let bLeft=barrCost;for(const k in P.woodByType){const take=Math.min(bLeft,P.woodByType[k]);P.woodByType[k]-=take;bLeft-=take;if(bLeft<=0)break}
   // Place barricade at northern edge of village
   const CX=128, VIL_Y=MH-12;
   let placed=false;
@@ -8541,8 +8597,10 @@ function doBuildBarricade(){
   }
   if(placed){
     shake=.2;sp(P.x,P.y,'#8a6a3a',8);
-    ft2(P.x,P.y,'🛡️ Barricade installée!','#b58863');
-    addRestauration(1);
+    ft2(P.x,P.y,`🛡️ Barricade installée${improvised?' (improvisée)':''}!`,'#b58863');
+    // Walls treat the symptom, not the cause — mastery, not restoration.
+    // Purifying the land (R) is the restorer's answer to the same threat.
+    addMaitrise(1);
   }else{
     ft2(P.x,P.y,'Plus de place pour les barricades!','#e74c3c');
     P.w+=barrCost; // refund
@@ -8552,27 +8610,83 @@ function doBuildBarricade(){
 function vilBarricadeLevel(){
   return Math.min(1,(P._barricadesBuilt||0)/10); // 10 barricades = fully protected
 }
-// Village unrest system: mobs near village increase unrest, barricades reduce it
+// Village unrest & siege system: mobs near village increase unrest; if corruption
+// creatures reach the village, everyone hides and every door locks except grandma's.
 let _vilUnrestT=0;
+let vilSiege={active:false,raidT:0,warned:false};
 function updVilUnrest(d){
   _vilUnrestT+=d;if(_vilUnrestT<2)return;_vilUnrestT=0;
   const VIL_Y=MH-12,CX=128;
   const vilRadius=20; // check mobs within 20 tiles of village center
-  let nearbyMobs=0;
+  let nearbyMobs=0,gateMobs=0,clearMobs=0;
   for(const e of ents){
     const dx=e.x-CX,dy=e.y-VIL_Y;
-    if(Math.sqrt(dx*dx+dy*dy)<vilRadius) nearbyMobs++;
+    const di=Math.sqrt(dx*dx+dy*dy);
+    if(di<vilRadius) nearbyMobs++;
+    if(di<10) gateMobs++;
+    if(di<16) clearMobs++;
+  }
+  // === RAIDERS: corruption close to the village sends creatures marching on it ===
+  if(gt>TUNING.enemyFirstSpawnTime){
+    let src=null,srcD=1e9;
+    for(const[sx,sy]of _corrSources){
+      const dd=Math.sqrt((sx-CX)**2+(sy-VIL_Y)**2);
+      if(dd<30&&dd<srcD&&(corr[sy]?.[sx]||0)>.35){src=[sx,sy];srcD=dd}
+    }
+    if(src){
+      vilSiege.raidT+=2;
+      if(!vilSiege.warned&&srcD<26){
+        vilSiege.warned=true;
+        announce('👁️ La corruption approche du village','Barricades (F au village) ou purification (R) — à toi de choisir','#9b59b6');
+        shake=.3;sfxCorruption();logEvent('SIEGE','Corruption proche du village',{dist:Math.floor(srcD)});
+      }
+      const raiders=ents.filter(e=>e.raid).length;
+      if(vilSiege.raidT>25&&raiders<4){
+        vilSiege.raidT=0;
+        const age=(gt-corrT[src[1]][src[0]])/60;
+        ents.push({x:src[0],y:src[1],tp:Math.random()>.6?'go':'sh',hp:2+Math.floor(age),mhp:2+Math.floor(age),spd:.9,dmg:1,ht:0,ar:7,mt:0,wb:Math.random()*6,fr:0,raid:true});
+        if(Math.sqrt((src[0]-P.x)**2+(src[1]-P.y)**2)<26)ft2(src[0]+.5,src[1]-.5,'👁️ Quelque chose marche vers le village...','#b266ff');
+      }
+    }else{vilSiege.raidT=0}
+  }
+  // === SIEGE TRIGGER: creatures at the gates → villagers hide, doors lock ===
+  if(!vilSiege.active&&gateMobs>0){
+    vilSiege.active=true;
+    announce('🚨 LE VILLAGE EST ATTAQUÉ !','Portes verrouillées — seule grand-mère t\'ouvrira. Nettoie le village !','#e74c3c');
+    shake=.8;sfxCorruption();sfxWolf();
+    logEvent('SIEGE','Le village est attaqué',{mobs:gateMobs});
+    P._siegeCount=(P._siegeCount||0)+1;
+    // Villagers sprint for shelter
+    figurants.forEach(f=>{f.hiding=false;f.fleeT=2.5+Math.random();f.tx=CX+(Math.random()-.5)*4;f.ty=VIL_Y+8+Math.random()*2;f.waitT=0});
+  }else if(vilSiege.active&&clearMobs===0){
+    // Village cleaned — life resumes
+    vilSiege.active=false;
+    const reward=15+(P._siegeCount||1)*5;
+    P.g+=reward;SESSION.totalGoldEarned+=reward;
+    announce('✅ Village nettoyé','Les villageois ressortent — merci ! +'+reward+' or','#52b788');
+    addMaitrise(2);sfxSell();
+    logEvent('SIEGE','Village nettoyé',{reward});
+    figurants.forEach(f=>{f.hiding=false;f.fleeT=0;f.waitT=1+Math.random()*2});
   }
   // Barricades repel: each barricade reduces effective mob count; totems calm spirits too
   const barrProtection=vilBarricadeLevel();
   const totemCount=(P._totems||[]).length;
   const effectiveMobs=Math.max(0,nearbyMobs-Math.floor(barrProtection*8)-totemCount*2);
-  // Update unrest: rises with mobs, decays without (faster with totems)
-  if(effectiveMobs>0){
+  // Update unrest: rises with mobs (faster during a siege), decays without (faster with totems)
+  if(vilSiege.active){
+    P._vilUnrest=Math.min(100,(P._vilUnrest||0)+6);
+  }else if(effectiveMobs>0){
     P._vilUnrest=Math.min(100,(P._vilUnrest||0)+effectiveMobs*2);
   }else{
     P._vilUnrest=Math.max(0,(P._vilUnrest||0)-1-totemCount);
   }
+  // Panic threshold — one-time warning, villagers lose faith
+  if((P._vilUnrest||0)>=100&&!P._panicWarned){
+    P._panicWarned=true;
+    announce('😱 Le village panique','Certains parlent de partir... protège-les ou purifie la terre','#e74c3c');
+    addDestruction(3);
+  }
+  if((P._vilUnrest||0)<50)P._panicWarned=false;
   // Barricades physically block mobs: push away mobs that hit barricade tiles
   for(const e of ents){
     const etx=Math.floor(e.x),ety=Math.floor(e.y);
