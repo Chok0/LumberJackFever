@@ -109,12 +109,12 @@ const TUNING = {
   // -- Player --
   playerBaseHp: 5,
   playerBaseStamina: 100,
-  playerSpeed: 3.85,
+  playerSpeed: 4.4,             // punchier base speed (was 3.85 — game felt slow)
   dashSpeedMult: 3.0,
-  dashStaCost: 40,              // reduced from 80 — dash must remain usable as emergency escape
+  dashStaCost: 30,              // cheaper dash — encourage mobility as a rhythm tool
   cutStaCost: 15,
-  cutCooldown: 0.45,            // base cooldown (raised from 0.3 — slower start, upgradeable)
-  staRegen: 30,
+  cutCooldown: 0.32,            // snappier chop rhythm (was 0.45)
+  staRegen: 38,                 // faster recovery keeps the action flowing (was 30)
   // -- Axe Durability --
   axeBaseDur: 50,           // base durability (hits)
   axeDurPerLevel: 25,       // +dur per axe level
@@ -600,6 +600,8 @@ const TT={G:0,ST:4,VL:5,SH:6,PA:7,TJ:8,BU:9,FL:10,RK:11,WA:12,
   GCAMP:118,       // Camp du grand-père — lore arc + one-time reward
   RUIN:119,        // Ruine ancienne — lore + loot once
   LUNE:120,        // Fleur lunaire — night-only collectible (+1 essence spirituelle)
+  CACHE:121,       // Cache enfouie — one-time loot stash hidden in the forest
+  SECRET:122,      // Pierre-fleur — heart of a secret clearing (reward if ring uncut)
 };
 // Essence data lookup
 const ESS={
@@ -636,11 +638,41 @@ const ESS={
 let map=[],corr=[],corrT=[],corrSrc=[],ents=[],parts=[],fts=[],amb=[],canopyP=[];
 let wildlife=[]; // passive fauna
 let gt=0,dayPhase=0.55,shopOn=false,curShop='',dead=false,shake=0,cuts=0;
+let hitstop=0; // brief time-dilation on impacts (juice) — scales d in the main loop
+let fallingTrees=[]; // felled trees animating their fall: {x,y,key,cat,t,dir}
+// ============ ANNOUNCEMENT BANNERS (interludes) ============
+// Big top-center banners that drive the player: events, discoveries, threats.
+let annQ=[],annCur=null;
+function announce(txt,sub,col){annQ.push({txt,sub:sub||'',col:col||'#e9c46a'})}
+function updAnnounce(d){
+  if(!annCur&&annQ.length){annCur=annQ.shift();annCur.t=0;annCur.dur=3.6;sfxMenuSelect()}
+  if(annCur){annCur.t+=d;if(annCur.t>annCur.dur)annCur=null}
+}
+function dAnnounce(){
+  if(!annCur)return;
+  const a=annCur,t=a.t,dur=a.dur;
+  // Slide in (0-0.3), hold, fade out (last 0.5)
+  const ease=t<.3?(t/.3)*(2-t/.3):1;
+  const fade=t>dur-.5?Math.max(0,(dur-t)/.5):1;
+  const cx=FCV.width/2,cy=FCV.height*.16-((1-ease)*30*SC);
+  FX.save();FX.globalAlpha=fade;
+  FX.textAlign='center';
+  FX.font=`bold ${13*SC}px monospace`;
+  const tw=FX.measureText(a.txt).width;
+  FX.fillStyle='rgba(4,10,6,0.75)';
+  FX.fillRect(cx-tw/2-14*SC,cy-13*SC,tw+28*SC,(a.sub?30:20)*SC);
+  FX.fillStyle=a.col;FX.fillRect(cx-tw/2-14*SC,cy-13*SC,3*SC,(a.sub?30:20)*SC);
+  FX.fillRect(cx+tw/2+11*SC,cy-13*SC,3*SC,(a.sub?30:20)*SC);
+  FX.fillStyle='#000';FX.fillText(a.txt,cx+1,cy+1);
+  FX.fillStyle=a.col;FX.fillText(a.txt,cx,cy);
+  if(a.sub){FX.font=`${7*SC}px monospace`;FX.fillStyle='#b7e4c7';FX.fillText(a.sub,cx,cy+12*SC)}
+  FX.restore();
+}
 let wind={x:0,y:0,t:0};
 let regrowMap=[]; // tracks stumps that will regrow: {ess, time}
 let wolves=[]; // nocturnal wolf packs: {x,y,hp,mhp,spd,dmg,ht,ar,fr,packId,fleeDir}
 let _wolfPacks=0,_wolfSpawnT=0; // pack count & spawn cooldown timer
-let P={x:128,y:210,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:3.5,wa:0,sw:0,
+let P={x:128,y:210,hp:5,mhp:5,sta:100,msta:100,w:0,wv:0,sap:0,g:0,axe:1,pow:1,f:0,ct:0,dt:0,iv:0,ht:0,dc:0,spd:4.4,wa:0,sw:0,
   invCap:15,_debt:0,_debtTime:0,_encens:0,_potions:0,_encensStock:0,
   herbs:0,mushrooms:0, // collected from clearings
   chestWood:0,chestSap:0,chestWoodByType:{}, // stored in house chest
@@ -3880,7 +3912,7 @@ function advanceDialogue(){
 function updateDialogue(d){
   if(!dlgTyping) return;
   dlgTimer += d;
-  if(dlgTimer > 0.025){ // typing speed
+  if(dlgTimer > 0.014){ // typing speed (snappier — was 0.025)
     dlgTimer = 0;
     dlgCharIdx++;
     if(dlgCharIdx >= dlgFullText.length){
@@ -4494,8 +4526,7 @@ function spawnDoctorIfReady(){
     map[cy][cx]=TT.DOCTOR;
     P._doctorPos={x:cx,y:cy};
   }
-  ft2(P.x,P.y-1,'💊 Un médecin s\'est installé au village!','#4a8aaa');
-  ft2(P.x,P.y-2,'Aldric a tenu parole... pour l\'instant.','#aaa');
+  announce('💊 Un médecin s\'installe au village','Aldric a tenu parole... pour l\'instant.','#4a8aaa');
 }
 
 // ============ REGROWTH SYSTEM ============
@@ -4656,7 +4687,7 @@ function updNightCycle(d){
       if(map[y][x]!==TT.G)continue;
       map[y][x]=TT.LUNE;_lunes.push({x,y});placed++;
     }
-    if(placed>0)ft2(P.x,P.y-1.5,'🌙 Des fleurs lunaires s\'ouvrent dans la nuit...','#9ad1ff');
+    if(placed>0)announce('🌙 La nuit tombe','Les fleurs lunaires éclosent — les loups rôdent','#9ad1ff');
   }
   if(ds.sun>0.4){
     // Morning: campfires burn out, lunar flowers close
@@ -4965,9 +4996,9 @@ function updCorr(d){
     let gMax=0;
     for(let cy=0;cy<MH;cy+=4)for(let cx=0;cx<MW;cx+=4)if(corr[cy]&&corr[cy][cx]>gMax)gMax=corr[cy][cx];
     // Cascade thresholds in order — if higher triggers, force lower ones first
-    if(gMax>=0.5&&!P._corrWarn50){P._corrWarn50=true;ft2(P.x,P.y-1.5,'⚠️ La corruption s\'étend dangereusement...','#9b59b6');shake=.3;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}
-    if(gMax>=0.75&&!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;ft2(P.x,P.y-1.5,'☠️ La forêt agonise ! Corruption critique !','#8b0000');shake=.6;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}
-    if(gMax>=1.0&&!P._corrWarn100){if(!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}P._corrWarn100=true;ft2(P.x,P.y-1.5,'💀 CORRUPTION TOTALE — La forêt est condamnée','#ff0000');shake=1;logEvent('CORRUPTION','corrMax atteint 1.0',{corrMax:1.0})}
+    if(gMax>=0.5&&!P._corrWarn50){P._corrWarn50=true;announce('⚠️ La corruption s\'étend','Purifie les souches (R) ou la forêt pourrira','#9b59b6');shake=.3;sfxCorruption();logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}
+    if(gMax>=0.75&&!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;announce('☠️ La forêt agonise','Corruption critique — agis maintenant','#8b0000');shake=.6;sfxCorruption();logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}
+    if(gMax>=1.0&&!P._corrWarn100){if(!P._corrWarn75){if(!P._corrWarn50){P._corrWarn50=true;logEvent('CORRUPTION','corrMax atteint 0.5',{corrMax:0.5})}P._corrWarn75=true;logEvent('CORRUPTION','corrMax atteint 0.75',{corrMax:0.75})}P._corrWarn100=true;announce('💀 CORRUPTION TOTALE','La forêt est condamnée...','#ff0000');shake=1;logEvent('CORRUPTION','corrMax atteint 1.0',{corrMax:1.0})}
   }
   // Debt interest — accumulate time, apply the full rate once per minute
   // (per-tick compounding + Math.floor truncated all growth on small debts)
@@ -5005,7 +5036,7 @@ function spawnE(){
 function updE(d){for(let i=ents.length-1;i>=0;i--){const e=ents[i];e.ht=Math.max(0,e.ht-d);e.mt-=d;e.wb+=d*3;e.fr+=d*4;
 // Despawn enemies that wander too far from corruption (safe zone protection)
 const eCorr=corr[Math.floor(e.y)]?.[Math.floor(e.x)]||0;if(eCorr<0.05&&!e.evt){e._safeT=(e._safeT||0)+d;if(e._safeT>5){ents.splice(i,1);continue}}else{e._safeT=0}
-const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
+const dx=P.x-e.x,dy=P.y-e.y,di=Math.sqrt(dx*dx+dy*dy);if(di<e.ar&&e.mt<=0){const nx=dx/di*e.spd*d,ny=dy/di*e.spd*d;const tx=Math.floor(e.x+nx),ty=Math.floor(e.y+ny);if(tx>=0&&ty>=0&&tx<MW&&ty<MH&&!isS(map[ty][tx])){e.x+=nx;e.y+=ny}}else if(e.mt<=0)e.mt=1+Math.random()*2;if(di<.8&&P.iv<=0){hurtP(e.dmg,1,.3,.5,'#e74c3c',8,e)}if(e.hp<=0){hitstop=Math.max(hitstop,.05);sp(e.x,e.y,e.tp==='go'?'#5e3a1a':'#7b68ee',12);if(Math.random()<.35&&invFree()>=RES_WEIGHT.sap){P.sap++;ft2(e.x,e.y,'💧+1','#b266ff')};if(Math.random()<.4){P.essences=(P.essences||0)+1;ft2(e.x,e.y-.5,'✨+1 Essence','#b266ff')};ents.splice(i,1)}}}
 function sp(x,y,c,n){for(let i=0;i<n;i++)parts.push({x,y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4-2,l:.4+Math.random()*.5,ml:.5+Math.random()*.4,c,s:1+Math.random()*2.5})}
 function ft2(x,y,t,c){fts.push({x,y,t,c,l:1.5,ml:1.5})}
 function hurtP(dmg,iv,ht,shk,col,n,attacker){
@@ -5018,11 +5049,23 @@ function hurtP(dmg,iv,ht,shk,col,n,attacker){
     ft2(P.x,P.y-1,'🛡️ Contre!','#ffd700');sfxHit();
     return;
   }
-  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block';SESSION.deaths++;SESSION.woodLostToDeaths+=P.w;const biome=P.y<40?3:P.y<100?2:P.y<170?1:0;logEvent('DEATH',`Mort (biome ${biome}, bois perdu: ${P.w}, or: ${P.g})`,{biome,x:Math.floor(P.x),y:Math.floor(P.y),woodLost:P.w,gold:P.g})}
+  const finalDmg=Math.max(1,dmg-(P._armor||0));P.hp-=finalDmg;P.iv=iv;P.ht=ht;shake=shk;hitstop=Math.max(hitstop,.07);sp(P.x,P.y,col,n);sfxPlayerHurt();if(P.hp<=0){dead=true;sfxDeath();document.getElementById('dth').style.display='block';SESSION.deaths++;SESSION.woodLostToDeaths+=P.w;const biome=P.y<40?3:P.y<100?2:P.y<170?1:0;logEvent('DEATH',`Mort (biome ${biome}, bois perdu: ${P.w}, or: ${P.g})`,{biome,x:Math.floor(P.x),y:Math.floor(P.y),woodLost:P.w,gold:P.g})}
 }
 function updParts(d){
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx*d;p.y+=p.vy*d;p.vy+=4*d;p.l-=d;if(p.l<=0)parts.splice(i,1)}
-  for(let i=fts.length-1;i>=0;i--){fts[i].y-=d*1.5;fts[i].l-=d;if(fts[i].l<=0)fts.splice(i,1)}
+  for(let i=fts.length-1;i>=0;i--){const f=fts[i];f.y-=d*(f.l>f.ml-.3?3.2:1.2);f.l-=d;if(f.l<=0)fts.splice(i,1)}
+  // Falling trees — animate the fall, then burst into leaves & dust
+  for(let i=fallingTrees.length-1;i>=0;i--){
+    const ft=fallingTrees[i];ft.t+=d;
+    if(ft.t>=.62){
+      // Impact: dust + leaf burst along the fallen trunk
+      const lx=ft.x+.5+ft.dir*1.2,ly=ft.y+.6;
+      sp(lx,ly,'#c9a86c',7);sp(lx,ly,'#8a8070',5);
+      for(let j=0;j<6;j++)amb.push({x:lx+(Math.random()-.5)*2,y:ly,vx:wind.x+(Math.random()-.5)*2,vy:-Math.random()*2-.5,l:1+Math.random(),ml:2,c:PAL.leaf1[j%PAL.leaf1.length],s:1.2+Math.random(),rot:Math.random()*6});
+      shake=Math.max(shake,.22);
+      fallingTrees.splice(i,1);
+    }
+  }
   const ds=getDayState();
   if(Math.random()<.1){
     const ax=P.x+(Math.random()-.5)*VW,ay=P.y+(Math.random()-.5)*VH;
@@ -5581,7 +5624,7 @@ function updP2(d){
   }
   // Note: don't consume K.KeyC here — the dash-attack skill (C+Space) needs to see C held; P.dc cooldown prevents re-trigger
   const dashCost=P._dashMastery?Math.max(15,TUNING.dashStaCost-15):TUNING.dashStaCost;
-  if(K.KeyC&&P._hasDash&&P.sta>dashCost&&P.dc<=0&&(mx||my)){P.dc=.5;P.dt=.2;P.sta-=dashCost;SESSION.staminaDumped+=dashCost;sp(P.x,P.y,'#9ad1ff',5)}
+  if(K.KeyC&&P._hasDash&&P.sta>dashCost&&P.dc<=0&&(mx||my)){P.dc=.35;P.dt=.22;P.sta-=dashCost;SESSION.staminaDumped+=dashCost;sp(P.x,P.y,'#9ad1ff',5)}
   if(P.dt>0&&(mx||my)){spd=P.spd*TUNING.dashSpeedMult}
   if(mx||my){P.wa+=d*10;P._stepT=(P._stepT||0)-d;if(P._stepT<=0){sfxFootstep();P._stepT=.3}}else{P.wa=0;P._stepT=0}
   const nx=P.x+mx*spd*d,ny=P.y+my*spd*d;
@@ -5776,6 +5819,9 @@ function updP2(d){
         if(!regrowMap[ty])regrowMap[ty]=[];
         if(wasPlanted)regrowMap[ty][tx]={ess:tile,time:gt+300,planted:true};
         else if(ess.regrow>0)regrowMap[ty][tx]={ess:tile,time:gt+ess.regrow};
+        // Falling tree animation — tips away from the swing, crashes with dust & leaves
+        fallingTrees.push({x:tx,y:ty,key:ess.spr,cat:SPRITE_CAT[ess.spr]||'s',t:0,dir:dd[0]!==0?dd[0]:(((tx*7+ty*13)%2)?1:-1)});
+        hitstop=Math.max(hitstop,.055);
         map[ty][tx]=TT.ST;delete _th[hk];delete _thT[hk];cuts++;sfxTreeFall();SESSION.totalCuts++;SESSION.cutsByType[tile]=(SESSION.cutsByType[tile]||0)+1;
         // === CHUTE EN CHAÎNE (axe Niv.4): the falling tree damages adjacent trees ===
         if(P.axe>=4){
@@ -5815,11 +5861,11 @@ function updP2(d){
   }
   // Track deepest biome reached
   const prevBiome=P._deepestBiome;
-  if(P.y<40&&P._deepestBiome<3){P._deepestBiome=3;ft2(P.x,P.y-1,'🌲 Forêt Primordiale','#b266ff');logEvent('BIOME','Forêt Primordiale',{biome:3})}
-  else if(P.y<100&&P._deepestBiome<2){P._deepestBiome=2;ft2(P.x,P.y-1,'🌲 Forêt Ancienne','#1a4a28');logEvent('BIOME','Forêt Ancienne',{biome:2})}
-  else if(P.y<170&&P._deepestBiome<1){P._deepestBiome=1;ft2(P.x,P.y-1,'🌲 Forêt Mixte','#2d6a4f');logEvent('BIOME','Forêt Mixte',{biome:1})}
-  if(P.x<86&&!P._enteredBoreal){P._enteredBoreal=true;ft2(P.x,P.y-1,'\u2744\ufe0f For\u00eat Bor\u00e9ale','#6a8aaa');shake=.2;logEvent('BIOME','Forêt Boréale',{zone:'boreal'})}
-  if(P.x>170&&!P._enteredMarecage){P._enteredMarecage=true;ft2(P.x,P.y-1,'\ud83c\udf3f Mar\u00e9cage','#2a6a4a');shake=.2;logEvent('BIOME','Marécage',{zone:'marecage'})}
+  if(P.y<40&&P._deepestBiome<3){P._deepestBiome=3;announce('🌲 Forêt Primordiale','Le cœur de la forêt. Quelque chose t\'observe.','#b266ff');logEvent('BIOME','Forêt Primordiale',{biome:3})}
+  else if(P.y<100&&P._deepestBiome<2){P._deepestBiome=2;announce('🌲 Forêt Ancienne','Arbres millénaires — hache Niv.3 requise','#52b788');logEvent('BIOME','Forêt Ancienne',{biome:2})}
+  else if(P.y<170&&P._deepestBiome<1){P._deepestBiome=1;announce('🌲 Forêt Mixte','Chênes et hêtres — de meilleures récoltes','#74c69d');logEvent('BIOME','Forêt Mixte',{biome:1})}
+  if(P.x<86&&!P._enteredBoreal){P._enteredBoreal=true;announce('\u2744\ufe0f For\u00eat Bor\u00e9ale','\u00c9pic\u00e9as de r\u00e9sonance et lacs gel\u00e9s','#6a8aaa');shake=.2;logEvent('BIOME','Forêt Boréale',{zone:'boreal'})}
+  if(P.x>170&&!P._enteredMarecage){P._enteredMarecage=true;announce('\ud83c\udf3f Mar\u00e9cage','Bois pr\u00e9cieux dans les eaux troubles','#2a9a6a');shake=.2;logEvent('BIOME','Marécage',{zone:'marecage'})}
 }
 // ============ CONTRACT SYSTEM ============
 const CONTRACT_TYPES=[TT.NOI,TT.AUL,TT.BOU,TT.ERA,TT.PIN,TT.FRE,TT.CHE,TT.HET,TT.IFS,TT.TIL,TT.SEQ,TT.PET];
@@ -7218,6 +7264,24 @@ function dObj(wx,wy){
   }
 }
 
+// Felled trees rotate around their base and crash to the ground
+function dFallingTrees(){
+  fallingTrees.forEach(ft=>{
+    const s=_s[ft.key];if(!s)return;
+    const hd=s._hd||1,dw=s.width/hd*SC,dh=s.height/hd*SC;
+    const ox=ft.cat==='s'?-2:ft.cat==='m'?-8:ft.cat==='j'?-16:-14;
+    const oy=ft.cat==='s'?-20:ft.cat==='m'?-32:ft.cat==='j'?-52:-48;
+    const bx=(ft.x-smCam.x)*T*SC+T/2*SC,by=(ft.y-smCam.y)*T*SC+T*SC; // pivot at trunk base
+    const tt=Math.min(1,ft.t/.6);
+    const ang=ft.dir*tt*tt*Math.PI*.48; // accelerating fall
+    X.save();
+    X.translate(bx,by);X.rotate(ang);
+    X.globalAlpha=tt>.85?1-(tt-.85)/.15*.6:1;
+    X.drawImage(s,0,0,s.width,s.height,(ft.x-smCam.x)*T*SC+ox*SC-bx,(ft.y-smCam.y)*T*SC+oy*SC-by,dw,dh);
+    X.restore();X.globalAlpha=1;
+  });
+}
+
 function dPlayer(){
   const sx=(P.x-smCam.x)*T*SC,sy=(P.y-smCam.y)*T*SC;
   if(P.iv>0&&Math.floor(P.iv*10)%2)return;
@@ -7314,7 +7378,7 @@ function dParts2(){
   });
   X.globalAlpha=1;
   drawGuardian();drawBossEast();drawBossWest();
-  fts.forEach(f=>{const sx=(f.x-smCam.x)*T*SC,sy=(f.y-smCam.y)*T*SC;X.globalAlpha=f.l/f.ml;X.font=`bold ${10*SC}px monospace`;X.fillStyle='#000';X.textAlign='center';X.fillText(f.t,sx+1,sy+1);X.fillStyle=f.c;X.fillText(f.t,sx,sy)});
+  fts.forEach(f=>{const sx=(f.x-smCam.x)*T*SC,sy=(f.y-smCam.y)*T*SC;const age=f.ml-f.l;const pop=age<.15?.5+(age/.15)*.65:Math.max(1,1.15-(age-.15)*.5);X.globalAlpha=Math.min(1,f.l/f.ml*1.4);X.font=`bold ${Math.round(10*SC*pop)}px monospace`;X.fillStyle='#000';X.textAlign='center';X.fillText(f.t,sx+1,sy+1);X.fillStyle=f.c;X.fillText(f.t,sx,sy)});
   X.globalAlpha=1;
 }
 
@@ -7712,6 +7776,43 @@ function dInteractPrompts(){
         return; // only show one prompt
       }
     }
+  }
+}
+
+// ============ ACCROCHES BORD D'ÉCRAN ============
+// Pulsing edge markers pointing to nearby undiscovered POIs — the forest pulls you one screen further
+function dPOIHooks(){
+  if(dead||shopOn||endingActive||introActive)return;
+  const cands=[];
+  (P._gcampsPos||[]).forEach(p=>{if(map[p.y]?.[p.x]===TT.GCAMP)cands.push({x:p.x,y:p.y,icon:'⛺',col:'#e9c46a'})});
+  (P._ruinsPos||[]).forEach(p=>{if(map[p.y]?.[p.x]===TT.RUIN)cands.push({x:p.x,y:p.y,icon:'🏛',col:'#9ad1ff'})});
+  (P._cachesPos||[]).forEach(p=>{if(map[p.y]?.[p.x]===TT.CACHE)cands.push({x:p.x,y:p.y,icon:'✦',col:'#ffd700'})});
+  (P._secretsPos||[]).forEach(p=>{if(map[p.y]?.[p.x]===TT.SECRET)cands.push({x:p.x,y:p.y,icon:'❀',col:'#b266ff'})});
+  let shown=0;
+  for(const c of cands){
+    if(shown>=3)break;
+    const dx=c.x-P.x,dy=c.y-P.y,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>42)continue;
+    // Skip if already visible on screen
+    if(c.x>smCam.x+1&&c.x<smCam.x+VW-1&&c.y>smCam.y+1&&c.y<smCam.y+VH-1)continue;
+    // Project onto screen edge
+    const cx2=FCV.width/2,cy2=FCV.height/2;
+    const ang=Math.atan2(dy,dx);
+    const m=26*SC; // edge margin
+    let ex=cx2+Math.cos(ang)*FCV.width,ey=cy2+Math.sin(ang)*FCV.height;
+    ex=Math.max(m,Math.min(FCV.width-m,ex));ey=Math.max(m,Math.min(FCV.height-m,ey));
+    const pulse=.35+Math.sin(gt*3+c.x)*.2+Math.max(0,(30-dist)/30)*.3;
+    FX.save();FX.globalAlpha=pulse;
+    // Chevron pointing outward
+    FX.translate(ex,ey);FX.rotate(ang);
+    FX.fillStyle=c.col;
+    FX.beginPath();FX.moveTo(10*SC,0);FX.lineTo(3*SC,-5*SC);FX.lineTo(3*SC,5*SC);FX.closePath();FX.fill();
+    FX.rotate(-ang);
+    FX.font=`${9*SC}px monospace`;FX.textAlign='center';
+    FX.fillStyle='rgba(4,10,6,0.7)';FX.beginPath();FX.arc(-6*SC*Math.cos(ang),-6*SC*Math.sin(ang),8*SC,0,Math.PI*2);FX.fill();
+    FX.fillStyle=c.col;FX.fillText(c.icon,-6*SC*Math.cos(ang),-6*SC*Math.sin(ang)+3*SC);
+    FX.restore();
+    shown++;
   }
 }
 
@@ -8829,7 +8930,7 @@ function evolveVillage(){
     const cx=CX+10, cy=VIL_Y+5;
     if(cy<MH && cx<MW){
       map[cy][cx]=TT.CARTO;
-      ft2(P.x,P.y-1.5,'Un cartographe a rejoint le village!','#4a90d9');
+      announce('🗺️ Un cartographe arrive au village','Il vend des cartes des zones profondes','#4a90d9');
     }
   }
   // Anthropologist arrives after first sacred tree
@@ -8846,7 +8947,7 @@ function evolveVillage(){
     const cx=CX+11, cy=VIL_Y+3;
     if(cy<MH && cx<MW){
       map[cy][cx]=TT.LUTH;
-      ft2(P.x,P.y-1,'🎻 Le luthier s\'installe au village!','#d4a017');
+      announce('🎻 Le luthier s\'installe au village','Tes bois rares l\'intéressent...','#d4a017');
     }
   }
 }
@@ -8854,8 +8955,10 @@ function evolveVillage(){
 // ============ MAIN ============
 let lt=0,mmT=0;
 function loop(ts){
-  const d=Math.min(.05,(ts-lt)/1000);lt=ts;
-  
+  let d=Math.min(.05,(ts-lt)/1000);lt=ts;
+  // Hit-stop: brief time dilation on big impacts — makes hits feel weighty
+  if(hitstop>0){hitstop=Math.max(0,hitstop-d);d*=.18}
+
   // Title screen — pause everything
   const ts2=document.getElementById('title-screen');
   if(ts2&&ts2.style.display!=='none'){requestAnimationFrame(loop);return}
@@ -8895,8 +8998,8 @@ function loop(ts){
   cam.x=P.x-VW/2;cam.y=P.y-VH/2;
   cam.x=Math.max(0,Math.min(MW-VW,cam.x));cam.y=Math.max(0,Math.min(MH-VH,cam.y));
   // Smooth camera
-  smCam.x+=(cam.x-smCam.x)*Math.min(1,d*8);
-  smCam.y+=(cam.y-smCam.y)*Math.min(1,d*8);
+  smCam.x+=(cam.x-smCam.x)*Math.min(1,d*11);
+  smCam.y+=(cam.y-smCam.y)*Math.min(1,d*11);
 
   const shX=shake>0?(Math.random()-.5)*shake*14:0,shY=shake>0?(Math.random()-.5)*shake*14:0;
 
@@ -8913,10 +9016,11 @@ function loop(ts){
   wildlife.forEach(w=>dl.push({tp:'w',w,x:w.x,y:w.y,sy:w.y}));
   dl.sort((a,b)=>a.sy-b.sy);
   dl.forEach(item=>{if(item.tp==='t')dObj(item.x,item.y);else if(item.tp==='p')dPlayer();else if(item.tp==='wlf')dWolves_single(item.w);else if(item.tp==='w')dWildlife_single(item.w)});
-  dFigurants();dEnts();dWorkers();dSacredMiniBosses();dChopProgress();dParts2();dInteractPrompts();
+  dFallingTrees();dFigurants();dEnts();dWorkers();dSacredMiniBosses();dChopProgress();dParts2();dInteractPrompts();
   X.restore();
 
-  dLighting();dFX();dUI();
+  updAnnounce(d);
+  dLighting();dFX();dPOIHooks();dAnnounce();dUI();
   mmT+=d;if(mmT>.4){mmT=0;dMM()}
   requestAnimationFrame(loop);
 }
